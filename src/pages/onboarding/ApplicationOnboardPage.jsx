@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useProjectCache } from '../../context/ProjectCacheContext';
-import { listEnvironmentsByProject } from '../../api/environmentApi';
-import { onboardApplication, updateApplication, getApplication, uploadApplicationSpec, fetchApplicationSpec } from '../../api/applicationApi';
+import { onboardApplication, updateApplication, getApplication, fetchApplicationSpec } from '../../api/applicationApi';
 
 export default function ApplicationOnboardPage() {
   const navigate = useNavigate();
@@ -11,13 +10,8 @@ export default function ApplicationOnboardPage() {
 
   const { projects, ensureLoaded } = useProjectCache();
   const [projectId, setProjectId] = useState('');
-  const [environments, setEnvironments] = useState([]);
-  const [environmentId, setEnvironmentId] = useState('');
 
   const [form, setForm] = useState({ name: '', description: '', applicationType: 'BACKEND', specFormat: 'YAML' });
-  const [sourceMode, setSourceMode] = useState('DERIVED'); // DERIVED | CUSTOM
-  const [customUrl, setCustomUrl] = useState('');
-  const [file, setFile] = useState(null);
 
   const [loading, setLoading] = useState(isEditMode);
   const [submitting, setSubmitting] = useState(false);
@@ -39,9 +33,6 @@ export default function ApplicationOnboardPage() {
     getApplication(id).then((app) => {
       setForm({ name: app.name, description: app.description || '', applicationType: app.applicationType, specFormat: app.specFormat || 'YAML' });
       setProjectId(String(app.projectId));
-      setSourceMode(app.specSourceMode || 'DERIVED');
-      setCustomUrl(app.specSourceUrl || '');
-      setEnvironmentId(app.referenceEnvironmentId ? String(app.referenceEnvironmentId) : '');
       setLoading(false);
     }).catch(() => {
       setError('Unable to load application');
@@ -50,39 +41,11 @@ export default function ApplicationOnboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditMode, id, projects]);
 
-  useEffect(() => {
-    if (!projectId) return;
-    listEnvironmentsByProject(projectId).then((envs) => {
-      setEnvironments(envs);
-      if (!isEditMode) setEnvironmentId(envs.length ? String(envs[0].id) : '');
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
-
   const update = (field, value) => setForm((f) => ({ ...f, [field]: value }));
-
-  const selectedProject = projects.find((p) => String(p.id) === projectId);
-  const selectedEnv = environments.find((e) => String(e.id) === environmentId);
-
-  const derivedUrlPreview = () => {
-    if (!selectedEnv || !form.name) return '(select an environment and enter an application name)';
-    let base = selectedEnv.baseUrl || '';
-    if (base.endsWith('/')) base = base.slice(0, -1);
-    const suffix = selectedProject?.specPathSuffix || '';
-    return `${base}/${form.name}${suffix}`;
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
-    if (sourceMode === 'DERIVED' && !environmentId) {
-      setError('Select an environment, or switch to a custom URL');
-      return;
-    }
-    if (sourceMode === 'CUSTOM' && !customUrl) {
-      setError('Enter a custom URL, or switch back to deriving one from an environment');
-      return;
-    }
     setSubmitting(true);
     try {
       const payload = {
@@ -91,9 +54,9 @@ export default function ApplicationOnboardPage() {
         description: form.description,
         applicationType: form.applicationType,
         specFormat: form.specFormat,
-        specSourceMode: sourceMode,
-        referenceEnvironmentId: sourceMode === 'DERIVED' ? Number(environmentId) : (environmentId ? Number(environmentId) : null),
-        specSourceUrl: sourceMode === 'CUSTOM' ? customUrl : null
+        specSourceMode: 'CUSTOM',
+        referenceEnvironmentId: null,
+        specSourceUrl: null
       };
       if (isEditMode) {
         await updateApplication(id, payload);
@@ -101,12 +64,7 @@ export default function ApplicationOnboardPage() {
         return;
       }
       const created = await onboardApplication({ ...payload, autoSyncEnabled: false });
-      if (file) {
-        await uploadApplicationSpec(created.id, file);
-        navigate('/onboarding');
-      } else {
-        setCreatedApp(created);
-      }
+      setCreatedApp(created);
     } catch (err) {
       setError(err.response?.data?.message || `Unable to ${isEditMode ? 'update' : 'onboard'} application`);
     } finally {
@@ -138,10 +96,9 @@ export default function ApplicationOnboardPage() {
         <div className="card-hd"><span className="card-title">Fetch Specification</span></div>
         <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 14 }}>
           <strong>{createdApp.name}</strong> was onboarded under project <strong>{createdApp.projectName}</strong>.
-          No file was uploaded, so fetch the spec now from the resolved URL below using the project's
-          configured keystore/truststore (if any).
+          Fetch the spec now from the resolved URL below using the project's configured keystore/truststore (if any).
         </div>
-        <div className="fld"><label>Resolved URL</label><input readOnly value={createdApp.specSourceUrl || derivedUrlPreview()} /></div>
+        <div className="fld"><label>Resolved URL</label><input readOnly value={createdApp.specSourceUrl} /></div>
 
         {fetchedOk ? (
           <div>
@@ -194,46 +151,10 @@ export default function ApplicationOnboardPage() {
         <div className="fld">
           <label>Type *</label>
           <select value={form.applicationType} onChange={(e) => update('applicationType', e.target.value)}>
-            <option value="BACKEND">Backend (OpenAPI / Swagger / GraphQL)</option>
-            <option value="FRONTEND">Frontend (DOM snapshot / selector map)</option>
+            <option value="BACKEND">Backend</option>
+            <option value="FRONTEND">Frontend</option>
           </select>
         </div>
-
-        <div className="fld">
-          <label>Spec Source</label>
-          <select value={sourceMode} onChange={(e) => setSourceMode(e.target.value)}>
-            <option value="DERIVED">Derive from Project + Environment + Application name</option>
-            <option value="CUSTOM">Overwrite with my own URL</option>
-          </select>
-        </div>
-
-        {sourceMode === 'DERIVED' ? (
-          <>
-            <div className="fld">
-              <label>Environment *</label>
-              <select required value={environmentId} onChange={(e) => setEnvironmentId(e.target.value)}>
-                {environments.length === 0 && <option value="">No environments under this project yet</option>}
-                {environments.map((env) => <option key={env.id} value={env.id}>{env.envName} ({env.baseUrl})</option>)}
-              </select>
-            </div>
-            <div className="fld">
-              <label>Derived URL Preview</label>
-              <input readOnly value={derivedUrlPreview()} />
-            </div>
-          </>
-        ) : (
-          <div className="fld">
-            <label>Custom Spec URL *</label>
-            <input required value={customUrl} onChange={(e) => setCustomUrl(e.target.value)} placeholder="https://api.example.com/openapi.yaml" />
-          </div>
-        )}
-
-        {!isEditMode && (
-          <div className="fld">
-            <label>Or Upload a Spec File Instead (skips fetching entirely)</label>
-            <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-          </div>
-        )}
 
         {error && <div className="login-error">{error}</div>}
 

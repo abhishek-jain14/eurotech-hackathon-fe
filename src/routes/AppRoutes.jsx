@@ -7,6 +7,7 @@ import DashboardPage from '../pages/dashboard/DashboardPage';
 import ProjectsPage from '../pages/projects/ProjectsPage';
 import ApplicationListPage from '../pages/onboarding/ApplicationListPage';
 import ApplicationOnboardPage from '../pages/onboarding/ApplicationOnboardPage';
+import ApplicationSpecsPage from '../pages/onboarding/ApplicationSpecsPage';
 import EnvironmentListPage from '../pages/environment/EnvironmentListPage';
 import ScenarioListPage from '../pages/scenarios/ScenarioListPage';
 import TestDataPage from '../pages/testdata/TestDataPage';
@@ -33,6 +34,7 @@ export default function AppRoutes() {
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/projects/:projectId/environments" element={<EnvironmentListPage />} />
         <Route path="/onboarding" element={<ApplicationListPage />} />
+        <Route path="/onboarding/:id/specs" element={<ApplicationSpecsPage />} />
 
         <Route path="/scenarios" element={<ScenarioListPage />} />
         <Route path="/testdata" element={<TestDataPage />} />
