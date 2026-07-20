@@ -1,4 +1,4 @@
-# test-fe — QAGenie Frontend
+# eurotech-hackathon-fe — QAGenie Frontend
 
 React 18.3.1 · Vite 5.4.8 · Node 22.x
 
