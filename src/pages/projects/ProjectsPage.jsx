@@ -8,13 +8,15 @@ import { ADMIN_ONLY } from '../../constants/roles';
 const EMPTY_FORM = { name: '', description: '', jiraUrl: '' };
 
 export default function ProjectsPage() {
-  const { projects, refresh: reloadProjects, ensureLoaded } = useProjectCache();
+  const { projects = [], refresh: reloadProjects, ensureLoaded } = useProjectCache();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState(null);
 
-  useEffect(() => { ensureLoaded(); }, [ensureLoaded]);
+  useEffect(() => { 
+    ensureLoaded().catch(err => console.error('Error loading projects:', err));
+  }, [ensureLoaded]);
 
   const update = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 

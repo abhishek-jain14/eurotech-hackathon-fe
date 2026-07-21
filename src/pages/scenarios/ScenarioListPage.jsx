@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { listApplications } from '../../api/applicationApi';
+import { listApplications, fetchEndpoints } from '../../api/applicationApi';
 import { listScenariosByApplication, createScenario, deleteScenario } from '../../api/scenarioApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
@@ -10,6 +10,21 @@ export default function ScenarioListPage() {
   const [applications, setProjects] = useState([]);
   const [applicationId, setApplicationId] = useState('');
   const [scenarios, setScenarios] = useState([]);
+  const [endpoints, setEndpoints] = useState([]);
+  const [endpointsLoading, setEndpointsLoading] = useState(false);
+  const [endpointsError, setEndpointsError] = useState(null);
+  const [apiTestData, setApiTestData] = useState({
+    endpoint: null,
+    headersEnabled: false,
+    headers: [], // [{name,value}]
+    pathParamsEnabled: false,
+    pathOrQueryParams: {},
+    requestBodyEnabled: false,
+    requestBodyValues: '', // JSON string for simplicity
+    expectedStatusCode: 200,
+    expectedResponseBody: '',
+    active: true
+  });
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState(null);
@@ -29,13 +44,102 @@ export default function ScenarioListPage() {
 
   useEffect(load, [applicationId]);
 
+  // Fetch endpoints for the selected application
+  useEffect(() => {
+    if (!applicationId) {
+      setEndpoints([]);
+      return;
+    }
+    setEndpointsLoading(true);
+    setEndpointsError(null);
+    fetchEndpoints(applicationId)
+      .then((data) => {
+        // Handle both array and paginated response formats
+        const endpointsArray = Array.isArray(data?.content) 
+          ? data.content 
+          : Array.isArray(data) 
+          ? data 
+          : [];
+        setEndpoints(endpointsArray);
+      })
+      .catch((err) => {
+        console.error('Failed to fetch endpoints:', err);
+        setEndpointsError(err.response?.data?.message || 'Unable to fetch endpoints');
+        setEndpoints([]);
+      })
+      .finally(() => setEndpointsLoading(false));
+  }, [applicationId]);
+
+  // Helper to build params object from endpoint definition
+  const buildParamsFromEndpoint = (ep) => {
+    const params = {};
+    const path = ep?.path || ep?.endpoint || '';
+    const re = /\{([^}]+)\}/g;
+    let m;
+    while ((m = re.exec(path))) {
+      params[m[1]] = `<${m[1]}>`;
+    }
+    if (Array.isArray(ep?.parameters)) {
+      ep.parameters.forEach((p) => {
+        if (p?.name && !(p.name in params)) params[p.name] = `<${p.name}>`;
+      });
+    }
+    return params;
+  };
+
   const update = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
   const handleCreate = async (e) => {
     e.preventDefault();
     setError(null);
     try {
-      await createScenario({ ...form, applicationId: Number(applicationId) });
+      // Build revised payload according to new API shape
+      const headersObj = apiTestData.headersEnabled
+        ? apiTestData.headers.reduce((acc, h) => {
+            if (h.name) acc[h.name] = h.value;
+            return acc;
+          }, {})
+        : undefined;
+
+      let requestBodyValuesObj;
+      if (apiTestData.requestBodyEnabled && apiTestData.requestBodyValues) {
+        try {
+          requestBodyValuesObj = JSON.parse(apiTestData.requestBodyValues);
+        } catch (err) {
+          setError('Invalid JSON in Request Body values');
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      // use pathOrQueryParams object from state when enabled
+      const pathOrQueryParamsObj = apiTestData.pathParamsEnabled ? apiTestData.pathOrQueryParams : undefined;
+
+      const payload = {
+        applicationId: Number(applicationId),
+        name: form.name,
+        httpMethod: form.httpMethod,
+        endpoint: form.endpoint,
+        scenarioType: form.scenarioType,
+        source: form.source,
+        riskLevel: form.riskLevel,
+        active: apiTestData.active,
+        apiTestData: {
+          endpoint: apiTestData.endpoint || { path: form.endpoint, httpMethod: form.httpMethod, summary: '' },
+          headers: headersObj,
+          pathOrQueryParams: apiTestData.pathParamsEnabled ? pathOrQueryParamsObj : undefined,
+          requestBodyValues: requestBodyValuesObj,
+          expectedStatusCode: Number(apiTestData.expectedStatusCode),
+          expectedResponseBody: apiTestData.expectedResponseBody
+        }
+      };
+
+      // Remove undefined keys from apiTestData
+      if (!payload.apiTestData.headers) delete payload.apiTestData.headers;
+      if (!payload.apiTestData.pathOrQueryParams) delete payload.apiTestData.pathOrQueryParams;
+      if (!payload.apiTestData.requestBodyValues) delete payload.apiTestData.requestBodyValues;
+
+      await createScenario(payload);
       setForm(EMPTY_FORM);
       setShowForm(false);
       load();
@@ -65,6 +169,52 @@ export default function ScenarioListPage() {
           {applications.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
       </div>
+
+      {/* Display available endpoints for the selected application */}
+      {applicationId && (
+        <div style={{ marginBottom: 14 }}>
+          {endpointsLoading && (
+            <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>Loading endpoints�</div>
+          )}
+          {endpointsError && (
+            <div className="readonly-banner" style={{ marginBottom: 10 }}>{endpointsError}</div>
+          )}
+          {!endpointsLoading && endpoints.length > 0 && (
+            <div className="card" style={{ padding: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 8, color: 'var(--text-dim)' }}>Available Endpoints:</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {endpoints.map((ep, idx) => (
+                  <div key={idx} style={{ 
+                    backgroundColor: 'var(--bg-secondary)', 
+                    padding: '4px 8px', 
+                    borderRadius: 4, 
+                    fontSize: 11,
+                    cursor: 'pointer',
+                    border: '1px solid var(--border-color)',
+                    transition: 'all 0.2s'
+                  }} 
+                  onClick={() => {
+                    const method = ep.httpMethod || 'GET';
+                    const path = ep.path || ep.endpoint || '';
+                    update('httpMethod', method);
+                    update('endpoint', path);
+                    const params = buildParamsFromEndpoint(ep);
+                    setApiTestData((s) => ({ ...s, endpoint: { path, httpMethod: method, summary: ep.summary || '' }, pathOrQueryParams: params }));
+                  }}
+                  onMouseOver={(e) => e.target.style.backgroundColor = 'var(--accent)'}
+                  onMouseOut={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
+                  >
+                    <strong>{ep.httpMethod || 'GET'}</strong> {ep.path || ep.endpoint || '�'}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {!endpointsLoading && endpoints.length === 0 && !endpointsError && (
+            <div style={{ fontSize: 12, color: 'var(--text-dim)', fontStyle: 'italic' }}>No endpoints available for this application.</div>
+          )}
+        </div>
+      )}
 
       {error && <div className="readonly-banner">{error}</div>}
 
@@ -97,6 +247,69 @@ export default function ScenarioListPage() {
                 </select>
               </div>
             </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+              <div className="fld">
+                <label>Active</label>
+                <input type="checkbox" checked={apiTestData.active} onChange={(e) => setApiTestData((s) => ({ ...s, active: e.target.checked }))} />
+              </div>
+              <div className="fld">
+                <label>Expected Status</label>
+                <input type="number" value={apiTestData.expectedStatusCode} onChange={(e) => setApiTestData((s) => ({ ...s, expectedStatusCode: e.target.value }))} />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginTop: 8 }}>
+              <div className="fld">
+                <label><input type="checkbox" checked={apiTestData.headersEnabled} onChange={(e) => setApiTestData((s) => ({ ...s, headersEnabled: e.target.checked }))} /> Enable Headers</label>
+                {apiTestData.headersEnabled && (
+                  <div style={{ marginTop: 8 }}>
+                    {apiTestData.headers.map((h, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                        <input placeholder="Name" value={h.name} onChange={(e) => setApiTestData((s) => { const headers = [...s.headers]; headers[i] = { ...headers[i], name: e.target.value }; return { ...s, headers }; })} />
+                        <input placeholder="Value" value={h.value} onChange={(e) => setApiTestData((s) => { const headers = [...s.headers]; headers[i] = { ...headers[i], value: e.target.value }; return { ...s, headers }; })} />
+                        <button type="button" className="btn btn-ghost" onClick={() => setApiTestData((s) => ({ ...s, headers: s.headers.filter((_, idx) => idx !== i) }))}>Remove</button>
+                      </div>
+                    ))}
+                    <button type="button" className="btn btn-primary btn-sm" onClick={() => setApiTestData((s) => ({ ...s, headers: [...s.headers, { name: '', value: '' }] }))}>Add Header</button>
+                  </div>
+                )}
+              </div>
+
+              <div className="fld">
+                <label><input type="checkbox" checked={apiTestData.pathParamsEnabled} onChange={(e) => setApiTestData((s) => ({ ...s, pathParamsEnabled: e.target.checked }))} /> Enable Path/Query Params (JSON)</label>
+                {apiTestData.pathParamsEnabled && (
+                  <div style={{ marginTop: 8 }}>
+                    {Object.keys(apiTestData.pathOrQueryParams || {}).length === 0 ? (
+                      <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>No params detected from endpoint.</div>
+                    ) : (
+                      <div>
+                        {Object.entries(apiTestData.pathOrQueryParams).map(([key, val], i) => (
+                          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                            <input value={key} disabled style={{ width: 160, background: '#f6f6f6' }} />
+                            <input value={val} onChange={(e) => setApiTestData((s) => ({ ...s, pathOrQueryParams: { ...s.pathOrQueryParams, [key]: e.target.value } }))} />
+                            <button type="button" className="btn btn-ghost" onClick={() => setApiTestData((s) => { const p = { ...s.pathOrQueryParams }; delete p[key]; return { ...s, pathOrQueryParams: p }; })}>Remove</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ marginTop: 8 }}>
+              <label><input type="checkbox" checked={apiTestData.requestBodyEnabled} onChange={(e) => setApiTestData((s) => ({ ...s, requestBodyEnabled: e.target.checked }))} /> Enable Request Body</label>
+              {apiTestData.requestBodyEnabled && (
+                <div style={{ marginTop: 8 }}>
+                  <textarea rows={6} value={apiTestData.requestBodyValues} onChange={(e) => setApiTestData((s) => ({ ...s, requestBodyValues: e.target.value }))} placeholder='{"field":"value"}' />
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 8 }}>
+              <label>Expected Response Body</label>
+              <input value={apiTestData.expectedResponseBody} onChange={(e) => setApiTestData((s) => ({ ...s, expectedResponseBody: e.target.value }))} />
+            </div>
             <div className="fld"><label>Description</label><textarea rows={2} value={form.description} onChange={(e) => update('description', e.target.value)} /></div>
             <div className="form-ft"><button className="btn btn-primary" type="submit">Save Scenario</button></div>
           </form>
@@ -114,7 +327,7 @@ export default function ScenarioListPage() {
                 <tr key={s.id}>
                   <td>{s.name}</td>
                   <td>{s.httpMethod} {s.endpoint}</td>
-                  <td><span className={`tag ${s.scenarioType === 'POSITIVE' ? 'tag-g' : 'tag-r'}`}>{s.scenarioType}</span></td>
+                  <td><span className={`tag ${s.scenarioType === "POSITIVE" ? "tag-g" : "tag-r"}`}>{s.scenarioType}</span></td>
                   <td><span className="tag tag-p">{s.source}</span></td>
                   <td>{s.riskLevel}</td>
                   <td>
@@ -131,3 +344,4 @@ export default function ScenarioListPage() {
     </div>
   );
 }
+

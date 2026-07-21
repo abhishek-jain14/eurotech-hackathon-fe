@@ -8,7 +8,7 @@ export default function ApplicationOnboardPage() {
   const { id } = useParams();
   const isEditMode = Boolean(id);
 
-  const { projects, ensureLoaded } = useProjectCache();
+  const { projects = [], ensureLoaded } = useProjectCache();
   const [projectId, setProjectId] = useState('');
 
   const [form, setForm] = useState({ name: '', description: '', applicationType: 'BACKEND', specFormat: 'YAML' });
@@ -23,11 +23,13 @@ export default function ApplicationOnboardPage() {
   const [fetching, setFetching] = useState(false);
   const [fetchedOk, setFetchedOk] = useState(false);
 
-  useEffect(() => { ensureLoaded(); }, [ensureLoaded]);
+  useEffect(() => { 
+    ensureLoaded().catch(err => console.error('Error loading projects:', err));
+  }, [ensureLoaded]);
 
   useEffect(() => {
     if (!isEditMode) {
-      if (projects.length && !projectId) setProjectId(String(projects[0].id));
+      if (projects?.length && !projectId) setProjectId(String(projects[0].id));
       return;
     }
     getApplication(id).then((app) => {
@@ -98,7 +100,7 @@ export default function ApplicationOnboardPage() {
           <strong>{createdApp.name}</strong> was onboarded under project <strong>{createdApp.projectName}</strong>.
           Fetch the spec now from the resolved URL below using the project's configured keystore/truststore (if any).
         </div>
-        <div className="fld"><label>Resolved URL</label><input readOnly value={createdApp.specSourceUrl} /></div>
+        <div className="fld"><label>Resolved URL</label><input readOnly value={createdApp.specSourceUrl || ''} /></div>
 
         {fetchedOk ? (
           <div>
@@ -135,8 +137,8 @@ export default function ApplicationOnboardPage() {
         <div className="fld">
           <label>Project * (gives this application its keystore/truststore)</label>
           <select required value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-            {projects.length === 0 && <option value="">No projects yet — create one first</option>}
-            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {projects?.length === 0 && <option value="">No projects yet — create one first</option>}
+            {projects?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
 
