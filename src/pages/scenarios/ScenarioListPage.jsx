@@ -29,6 +29,10 @@ export default function ScenarioListPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState(null);
+  // Header/path/query fields detected on the selected endpoint (from the SPEC_ENDPOINT
+  // cache via GET /fetch-endpoints), shown as a checklist - only checked fields are
+  // included when the scenario is generated/saved.
+  const [endpointFields, setEndpointFields] = useState({ header: [], pathQuery: [] });
 
   useEffect(() => {
     listApplications({ size: 100 }).then((page) => {
@@ -70,23 +74,6 @@ export default function ScenarioListPage() {
       })
       .finally(() => setEndpointsLoading(false));
   }, [applicationId]);
-
-  // Helper to build params object from endpoint definition
-  const buildParamsFromEndpoint = (ep) => {
-    const params = {};
-    const path = ep?.path || ep?.endpoint || '';
-    const re = /\{([^}]+)\}/g;
-    let m;
-    while ((m = re.exec(path))) {
-      params[m[1]] = `<${m[1]}>`;
-    }
-    if (Array.isArray(ep?.parameters)) {
-      ep.parameters.forEach((p) => {
-        if (p?.name && !(p.name in params)) params[p.name] = `<${p.name}>`;
-      });
-    }
-    return params;
-  };
 
   // Helper to generate request body from endpoint schema
   const generateRequestBodyFromSchema = (schema) => {
@@ -246,8 +233,21 @@ export default function ScenarioListPage() {
                     const path = ep.path || ep.endpoint || '';
                     update('httpMethod', method);
                     update('endpoint', path);
-                    const params = buildParamsFromEndpoint(ep);
-                    setApiTestData((s) => ({ ...s, endpoint: { path, httpMethod: method, summary: ep.summary || '', requestBody: ep.requestBody || null }, pathOrQueryParams: params }));
+
+                    const parameters = Array.isArray(ep.parameters) ? ep.parameters : [];
+                    const headerFields = parameters.filter((p) => (p?.in || '').toLowerCase() === 'header');
+                    const pathQueryFields = parameters.filter((p) => {
+                      const loc = (p?.in || '').toLowerCase();
+                      return loc === 'path' || loc === 'query' || !loc;
+                    });
+                    setEndpointFields({ header: headerFields, pathQuery: pathQueryFields });
+
+                    setApiTestData((s) => ({
+                      ...s,
+                      endpoint: { path, httpMethod: method, summary: ep.summary || '', requestBody: ep.requestBody || null },
+                      headers: [],
+                      pathOrQueryParams: {}
+                    }));
                   }}
                   onMouseOver={(e) => e.target.style.backgroundColor = 'var(--accent)'}
                   onMouseOut={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
@@ -311,34 +311,91 @@ export default function ScenarioListPage() {
                 <label><input type="checkbox" checked={apiTestData.headersEnabled} onChange={(e) => setApiTestData((s) => ({ ...s, headersEnabled: e.target.checked }))} /> Enable Headers</label>
                 {apiTestData.headersEnabled && (
                   <div style={{ marginTop: 8 }}>
-                    {apiTestData.headers.map((h, i) => (
-                      <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-                        <input placeholder="Name" value={h.name} onChange={(e) => setApiTestData((s) => { const headers = [...s.headers]; headers[i] = { ...headers[i], name: e.target.value }; return { ...s, headers }; })} />
-                        <input placeholder="Value" value={h.value} onChange={(e) => setApiTestData((s) => { const headers = [...s.headers]; headers[i] = { ...headers[i], value: e.target.value }; return { ...s, headers }; })} />
-                        <button type="button" className="btn btn-ghost" onClick={() => setApiTestData((s) => ({ ...s, headers: s.headers.filter((_, idx) => idx !== i) }))}>Remove</button>
+                    {endpointFields.header.length > 0 && (
+                      <div style={{ marginBottom: 10 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4 }}>Detected from endpoint - check to include:</div>
+                        {endpointFields.header.map((f) => {
+                          const checked = apiTestData.headers.some((h) => h.name === f.name);
+                          const current = apiTestData.headers.find((h) => h.name === f.name);
+                          return (
+                            <div key={f.name} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => setApiTestData((s) => ({
+                                  ...s,
+                                  headersEnabled: true,
+                                  headers: e.target.checked
+                                    ? [...s.headers, { name: f.name, value: `<${f.name}>` }]
+                                    : s.headers.filter((h) => h.name !== f.name)
+                                }))}
+                              />
+                              <span style={{ minWidth: 140 }}>{f.name}{f.required ? ' *' : ''}</span>
+                              <span className="tag" style={{ fontSize: 10 }}>{f.type || 'string'}</span>
+                              {checked && (
+                                <input
+                                  style={{ flex: 1 }}
+                                  value={current?.value || ''}
+                                  onChange={(e) => setApiTestData((s) => ({ ...s, headers: s.headers.map((h) => h.name === f.name ? { ...h, value: e.target.value } : h) }))}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
+                    )}
+                    {apiTestData.headers.filter((h) => !endpointFields.header.some((f) => f.name === h.name)).map((h) => {
+                      const i = apiTestData.headers.indexOf(h);
+                      return (
+                        <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                          <input placeholder="Name" value={h.name} onChange={(e) => setApiTestData((s) => { const headers = [...s.headers]; headers[i] = { ...headers[i], name: e.target.value }; return { ...s, headers }; })} />
+                          <input placeholder="Value" value={h.value} onChange={(e) => setApiTestData((s) => { const headers = [...s.headers]; headers[i] = { ...headers[i], value: e.target.value }; return { ...s, headers }; })} />
+                          <button type="button" className="btn btn-ghost" onClick={() => setApiTestData((s) => ({ ...s, headers: s.headers.filter((_, idx) => idx !== i) }))}>Remove</button>
+                        </div>
+                      );
+                    })}
                     <button type="button" className="btn btn-primary btn-sm" onClick={() => setApiTestData((s) => ({ ...s, headers: [...s.headers, { name: '', value: '' }] }))}>Add Header</button>
                   </div>
                 )}
               </div>
 
               <div className="fld">
-                <label><input type="checkbox" checked={apiTestData.pathParamsEnabled} onChange={(e) => setApiTestData((s) => ({ ...s, pathParamsEnabled: e.target.checked }))} /> Enable Path/Query Params (JSON)</label>
+                <label><input type="checkbox" checked={apiTestData.pathParamsEnabled} onChange={(e) => setApiTestData((s) => ({ ...s, pathParamsEnabled: e.target.checked }))} /> Enable Path/Query Params</label>
                 {apiTestData.pathParamsEnabled && (
                   <div style={{ marginTop: 8 }}>
-                    {Object.keys(apiTestData.pathOrQueryParams || {}).length === 0 ? (
-                      <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>No params detected from endpoint.</div>
-                    ) : (
+                    {endpointFields.pathQuery.length > 0 ? (
                       <div>
-                        {Object.entries(apiTestData.pathOrQueryParams).map(([key, val], i) => (
-                          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-                            <input value={key} disabled style={{ width: 160, background: '#f6f6f6' }} />
-                            <input value={val} onChange={(e) => setApiTestData((s) => ({ ...s, pathOrQueryParams: { ...s.pathOrQueryParams, [key]: e.target.value } }))} />
-                            <button type="button" className="btn btn-ghost" onClick={() => setApiTestData((s) => { const p = { ...s.pathOrQueryParams }; delete p[key]; return { ...s, pathOrQueryParams: p }; })}>Remove</button>
-                          </div>
-                        ))}
+                        <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4 }}>Detected from endpoint - check to include:</div>
+                        {endpointFields.pathQuery.map((f) => {
+                          const params = apiTestData.pathOrQueryParams || {};
+                          const checked = Object.prototype.hasOwnProperty.call(params, f.name);
+                          return (
+                            <div key={f.name} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => setApiTestData((s) => {
+                                  const next = { ...(s.pathOrQueryParams || {}) };
+                                  if (e.target.checked) next[f.name] = `<${f.name}>`;
+                                  else delete next[f.name];
+                                  return { ...s, pathParamsEnabled: true, pathOrQueryParams: next };
+                                })}
+                              />
+                              <span style={{ minWidth: 140 }}>{f.name}{f.required ? ' *' : ''}</span>
+                              <span className="tag" style={{ fontSize: 10 }}>{f.type || 'string'}</span>
+                              {checked && (
+                                <input
+                                  style={{ flex: 1 }}
+                                  value={params[f.name] || ''}
+                                  onChange={(e) => setApiTestData((s) => ({ ...s, pathOrQueryParams: { ...s.pathOrQueryParams, [f.name]: e.target.value } }))}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
+                    ) : (
+                      <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>No path/query params detected from endpoint.</div>
                     )}
                   </div>
                 )}
