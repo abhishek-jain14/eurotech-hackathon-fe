@@ -21,6 +21,7 @@ export default function ScenarioListPage() {
     pathOrQueryParams: {},
     requestBodyEnabled: false,
     requestBodyValues: '', // JSON string for simplicity
+    requestBodySchema: null, // Store the schema for formatting display
     expectedStatusCode: 200,
     expectedResponseBody: '',
     active: true
@@ -85,6 +86,53 @@ export default function ScenarioListPage() {
       });
     }
     return params;
+  };
+
+  // Helper to generate request body from endpoint schema
+  const generateRequestBodyFromSchema = (schema) => {
+    if (!schema || !schema.properties) return null;
+    const result = {};
+    Object.entries(schema.properties).forEach(([key, prop]) => {
+      const type = prop.type;
+      if (type === 'string') {
+        result[key] = `<${key}_string>`;
+      } else if (type === 'integer') {
+        result[key] = `<${key}_integer>`;
+      } else if (type === 'number') {
+        result[key] = `<${key}_number>`;
+      } else if (type === 'boolean') {
+        result[key] = `<${key}_boolean>`;
+      } else {
+        result[key] = `<${key}_${type}>`;
+      }
+    });
+    return result;
+  };
+
+  // Helper to format request body for display
+  const formatRequestBodyForDisplay = (schema) => {
+    if (!schema || !schema.properties) return '';
+    const lines = ['{'];
+    const entries = Object.entries(schema.properties);
+    entries.forEach(([key, prop], idx) => {
+      const type = prop.type;
+      let value;
+      if (type === 'string') {
+        value = `"<${key}_string>"`;
+      } else if (type === 'integer') {
+        value = `<${key}_integer>`;
+      } else if (type === 'number') {
+        value = `<${key}_number>`;
+      } else if (type === 'boolean') {
+        value = `<${key}_boolean>`;
+      } else {
+        value = `<${key}_${type}>`;
+      }
+      const comma = idx < entries.length - 1 ? ',' : '';
+      lines.push(`  "${key}": ${value}${comma}`);
+    });
+    lines.push('}');
+    return lines.join('\n');
   };
 
   const update = (field, value) => setForm((f) => ({ ...f, [field]: value }));
@@ -199,7 +247,7 @@ export default function ScenarioListPage() {
                     update('httpMethod', method);
                     update('endpoint', path);
                     const params = buildParamsFromEndpoint(ep);
-                    setApiTestData((s) => ({ ...s, endpoint: { path, httpMethod: method, summary: ep.summary || '' }, pathOrQueryParams: params }));
+                    setApiTestData((s) => ({ ...s, endpoint: { path, httpMethod: method, summary: ep.summary || '', requestBody: ep.requestBody || null }, pathOrQueryParams: params }));
                   }}
                   onMouseOver={(e) => e.target.style.backgroundColor = 'var(--accent)'}
                   onMouseOut={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
@@ -298,10 +346,29 @@ export default function ScenarioListPage() {
             </div>
 
             <div style={{ marginTop: 8 }}>
-              <label><input type="checkbox" checked={apiTestData.requestBodyEnabled} onChange={(e) => setApiTestData((s) => ({ ...s, requestBodyEnabled: e.target.checked }))} /> Enable Request Body</label>
+              <label>
+                <input 
+                  type="checkbox" 
+                  checked={apiTestData.requestBodyEnabled} 
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      const schema = apiTestData.endpoint?.requestBody;
+                      if (schema) {
+                        const bodyObj = generateRequestBodyFromSchema(schema);
+                        setApiTestData((s) => ({ ...s, requestBodyEnabled: true, requestBodyValues: JSON.stringify(bodyObj), requestBodySchema: schema }));
+                      } else {
+                        setApiTestData((s) => ({ ...s, requestBodyEnabled: false, requestBodyValues: '' }));
+                      }
+                    } else {
+                      setApiTestData((s) => ({ ...s, requestBodyEnabled: false, requestBodyValues: '', requestBodySchema: null }));
+                    }
+                  }} 
+                /> 
+                Enable Request Body
+              </label>
               {apiTestData.requestBodyEnabled && (
-                <div style={{ marginTop: 8 }}>
-                  <textarea rows={6} value={apiTestData.requestBodyValues} onChange={(e) => setApiTestData((s) => ({ ...s, requestBodyValues: e.target.value }))} placeholder='{"field":"value"}' />
+                <div style={{ marginTop: 8, padding: 12, backgroundColor: '#f6f6f6', borderRadius: 4, fontSize: 12, fontFamily: 'monospace', border: '1px solid #ddd', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {formatRequestBodyForDisplay(apiTestData.requestBodySchema || apiTestData.endpoint?.requestBody)}
                 </div>
               )}
             </div>
