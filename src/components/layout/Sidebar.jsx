@@ -1,36 +1,34 @@
-import { NavLink } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
-import { ROLES } from '../../constants/roles';
+import { NavLink } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import { ROLES } from "../../constants/roles";
 
 const NAV_SECTIONS = [
   {
-    label: 'Overview',
-    items: [{ to: '/dashboard', label: 'Dashboard', icon: '◈' }]
+    label: "Overview",
+    items: [{ to: "/dashboard", label: "Dashboard", icon: "◈" }],
   },
   {
-    label: 'Setup',
+    label: "Setup",
     items: [
-      { to: '/projects', label: 'Projects', icon: '◆' },
-      { to: '/onboarding', label: 'Applications', icon: '⊕' },
-      { to: '/maintenance', label: 'Change Tracker', icon: '⚡' }
-    ]
+      { to: "/projects", label: "Projects", icon: "◆" },
+      { to: "/onboarding", label: "Applications", icon: "⊕" },
+      { to: "/maintenance", label: "Change Tracker", icon: "⚡" },
+    ],
   },
   {
-    label: 'Testing',
+    label: "Testing",
     items: [
-      { to: '/scenarios', label: 'Scenarios', icon: '≡' },
-      { to: '/coverage', label: 'Coverage', icon: '◎' },
-      { to: '/testdata', label: 'Test Data', icon: '⊞' },
-      { to: '/testflows', label: 'Test Flows', icon: '⤳' },
-      { to: '/execution', label: 'Execution', icon: '▶' }
-    ]
+      { to: "/scenarios", label: "Scenarios", icon: "≡" },
+      { to: "/coverage", label: "Coverage", icon: "◎" },
+      { to: "/testdata", label: "Test Data", icon: "⊞" },
+      { to: "/testflows", label: "Test Flows", icon: "⤳" },
+      { to: "/execution", label: "Execution", icon: "▶" },
+    ],
   },
   {
-    label: 'Insights',
-    items: [
-      { to: '/reports', label: 'Reports', icon: '◉' }
-    ]
-  }
+    label: "Insights",
+    items: [{ to: "/reports", label: "Reports", icon: "◉" }],
+  },
 ];
 
 export default function Sidebar() {
@@ -39,7 +37,9 @@ export default function Sidebar() {
   return (
     <div className="sidebar">
       <div className="logo">
-        <div className="logo-name">QA<span>Genie</span></div>
+        <div className="logo-name">
+          QA<span>Genie</span>
+        </div>
         <div className="logo-sub">WISH. TEST. SHIP.</div>
       </div>
 
@@ -50,7 +50,9 @@ export default function Sidebar() {
             <NavLink
               key={item.to}
               to={item.to}
-              className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}
+              className={({ isActive }) =>
+                "nav-item" + (isActive ? " active" : "")
+              }
             >
               <span>{item.icon}</span> {item.label}
             </NavLink>
@@ -61,7 +63,12 @@ export default function Sidebar() {
       {user?.role === ROLES.ADMIN && (
         <div>
           <div className="nav-sec">ADMIN</div>
-          <NavLink to="/users" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}>
+          <NavLink
+            to="/users"
+            className={({ isActive }) =>
+              "nav-item" + (isActive ? " active" : "")
+            }
+          >
             <span>☰</span> Users
           </NavLink>
         </div>

@@ -143,6 +143,19 @@ tr:hover td { background: var(--surface-2); }
 
 .form-ft { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 
+.coverage-gap-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.coverage-gap-row:last-child { border-bottom: none; }
+.coverage-gap-title { font-weight: 700; margin-bottom: 3px; }
+.coverage-gap-desc { font-size: 12px; color: var(--text-dim); }
+.coverage-table td:last-child { color: var(--text-muted); }
+
 .login-shell {
   min-height: 100vh;
   display: flex;
