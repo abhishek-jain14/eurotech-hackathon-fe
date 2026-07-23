@@ -15,6 +15,7 @@ import TestFlowsPage from '../pages/testflows/TestFlowsPage';
 import ExecutionPage from '../pages/execution/ExecutionPage';
 import ReportsPage from '../pages/reports/ReportsPage';
 import ChangeTrackerPage from '../pages/maintenance/ChangeTrackerPage';
+import CoveragePage from '../pages/coverage/CoveragePage';
 import UsersPage from '../pages/users/UsersPage';
 import NotFound from '../pages/NotFound';
 import Unauthorized from '../pages/Unauthorized';
@@ -41,6 +42,7 @@ export default function AppRoutes() {
         <Route path="/testflows" element={<TestFlowsPage />} />
         <Route path="/execution" element={<ExecutionPage />} />
         <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/coverage" element={<CoveragePage />} />
         <Route path="/maintenance" element={<ChangeTrackerPage />} />
       </Route>
 

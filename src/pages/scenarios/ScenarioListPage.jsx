@@ -1,471 +1,370 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { listApplications, fetchEndpoints } from '../../api/applicationApi';
 import { listScenariosByApplication, createScenario, deleteScenario } from '../../api/scenarioApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
+import ScenarioForm from './ScenarioForm';
+import { buildGherkinLines } from './gherkinPreview';
 
-const EMPTY_FORM = { name: '', httpMethod: 'GET', endpoint: '', scenarioType: 'POSITIVE', source: 'MANUAL', riskLevel: 'MEDIUM', description: '' };
+const FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'positive', label: '✅ Positive' },
+  { key: 'negative', label: '❌ Negative' },
+  { key: 'ai', label: 'AI' },
+  { key: 'jira', label: 'Jira' },
+  { key: 'manual', label: 'Manual' }
+];
+
+const TABS = [
+  { key: 'details', label: 'Details' },
+  { key: 'steps', label: 'Steps' },
+  { key: 'data', label: 'Test Data' },
+  { key: 'history', label: 'History' }
+];
+
+const formatTimestamp = (val) => {
+  if (!val) return null;
+  const date = new Date(val);
+  return Number.isNaN(date.getTime()) ? null : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+};
+
+const typeTagClass = (scenarioType) => (scenarioType === 'POSITIVE' ? 'tag-g' : 'tag-r');
+const sourceTagClass = (source) => (source === 'AI' ? 'tag-p' : source === 'JIRA' ? 'tag-a' : 'tag');
+const sourceLabel = (source) => (source === 'AI' ? 'AI Generated' : source === 'JIRA' ? 'From Jira' : 'Manual');
+const riskTagClass = (risk) => (risk === 'HIGH' ? 'tag-r' : risk === 'MEDIUM' ? 'tag-a' : 'tag-g');
+
+function DetailsTab({ scenario, applicationName, onEdit, onDelete, onRun }) {
+  const sc = scenario;
+  const statusCode = sc.apiTestData?.expectedStatusCode;
+  const statusColor = statusCode == null ? null : statusCode < 300 ? 'var(--accent)' : statusCode < 500 ? 'var(--amber)' : 'var(--red)';
+  const createdAtLabel = formatTimestamp(sc.createdAt);
+
+  return (
+    <div>
+      <div className="sc-panel-actions">
+        <RoleGate roles={EDIT_ROLES}>
+          <button className="btn btn-ghost btn-sm" onClick={onEdit}>✎ Edit</button>
+          <button className="btn btn-red btn-sm" onClick={onDelete}>🗑 Delete</button>
+        </RoleGate>
+        <button className="btn btn-primary btn-sm" onClick={onRun}>▶ Run</button>
+      </div>
+
+      <div className="sc-detail-title">{sc.name}</div>
+      <div className="sc-detail-tags">
+        <span className={`tag ${typeTagClass(sc.scenarioType)}`}>{sc.scenarioType === 'POSITIVE' ? 'positive' : 'negative'}</span>
+        <span className={`tag ${sourceTagClass(sc.source)}`}>{sourceLabel(sc.source)}</span>
+        {sc.riskLevel && <span className={`tag ${riskTagClass(sc.riskLevel)}`}>{sc.riskLevel.charAt(0) + sc.riskLevel.slice(1).toLowerCase()} Risk</span>}
+        {statusCode != null && <span className="tag" style={{ borderColor: statusColor, color: statusColor }}>HTTP {statusCode}</span>}
+      </div>
+
+      {sc.description && <div className="sc-detail-desc">{sc.description}</div>}
+
+      <div className="sc-meta-list">
+        {applicationName && (
+          <div className="sc-meta-row"><span>Application</span><span style={{ color: 'var(--accent)' }}>{applicationName}</span></div>
+        )}
+        {sc.endpoint && (
+          <div className="sc-meta-row"><span>Endpoint</span><span>{sc.httpMethod} {sc.endpoint}</span></div>
+        )}
+        {sc.scenarioType && (
+          <div className="sc-meta-row"><span>Type</span><span className={`tag ${typeTagClass(sc.scenarioType)}`}>{sc.scenarioType}</span></div>
+        )}
+        {sc.riskLevel && (
+          <div className="sc-meta-row"><span>Risk Level</span><span className={`tag ${riskTagClass(sc.riskLevel)}`}>{sc.riskLevel}</span></div>
+        )}
+        {sc.source && (
+          <div className="sc-meta-row"><span>Source</span><span className={`tag ${sourceTagClass(sc.source)}`}>{sourceLabel(sc.source)}</span></div>
+        )}
+        {createdAtLabel && (
+          <div className="sc-meta-row"><span>Created</span><span style={{ color: 'var(--text-dim)' }}>{createdAtLabel}{sc.createdBy ? ` · ${sc.createdBy}` : ''}</span></div>
+        )}
+      </div>
+
+      {sc.source === 'AI' && (
+        <div className="sc-ai-box">
+          <div className="sc-ai-box-title">✦ AI Context</div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>Generated from {sc.httpMethod} {sc.endpoint}.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StepsTab({ scenario }) {
+  const lines = buildGherkinLines(scenario);
+  return (
+    <div>
+      <div className="sc-steps-label">Gherkin Test Steps</div>
+      <div className="sc-gherkin-box">
+        {lines.map((line, i) => (
+          <div key={i}>
+            {line.map((tok, j) => (tok.cls ? <span key={j} className={`sc-${tok.cls}`}>{tok.text}</span> : <span key={j}>{tok.text}</span>))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DataTab() {
+  return <div className="empty-state">No linked dataset — test data linking isn't available for scenarios yet.</div>;
+}
+
+function HistoryTab({ navigate }) {
+  return (
+    <div className="empty-state">
+      <div>Run history isn't tracked per scenario. See the Execution page for application-level run history.</div>
+      <button className="btn btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={() => navigate('/execution')}>→ Go to Execution</button>
+    </div>
+  );
+}
 
 export default function ScenarioListPage() {
-  const [applications, setProjects] = useState([]);
+  const navigate = useNavigate();
+  const [applications, setApplications] = useState([]);
   const [applicationId, setApplicationId] = useState('');
   const [scenarios, setScenarios] = useState([]);
   const [endpoints, setEndpoints] = useState([]);
   const [endpointsLoading, setEndpointsLoading] = useState(false);
   const [endpointsError, setEndpointsError] = useState(null);
-  const [apiTestData, setApiTestData] = useState({
-    endpoint: null,
-    headersEnabled: false,
-    headers: [], // [{name,value}]
-    pathParamsEnabled: false,
-    pathOrQueryParams: {},
-    requestBodyEnabled: false,
-    requestBodyValues: '', // JSON string for simplicity
-    requestBodySchema: null, // Store the schema for formatting display
-    expectedStatusCode: 200,
-    expectedResponseBody: '',
-    active: true
-  });
+
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [activeId, setActiveId] = useState(null);
+  const [activeTab, setActiveTab] = useState('details');
+
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [editingScenario, setEditingScenario] = useState(null);
   const [error, setError] = useState(null);
-  // Header/path/query fields detected on the selected endpoint (from the SPEC_ENDPOINT
-  // cache via GET /fetch-endpoints), shown as a checklist - only checked fields are
-  // included when the scenario is generated/saved.
-  const [endpointFields, setEndpointFields] = useState({ header: [], pathQuery: [] });
 
   useEffect(() => {
     listApplications({ size: 100 }).then((page) => {
       const list = page.content || [];
-      setProjects(list);
+      setApplications(list);
       if (list.length && !applicationId) setApplicationId(String(list[0].id));
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const load = () => {
-    if (!applicationId) return;
-    listScenariosByApplication(applicationId, { size: 100 }).then((page) => setScenarios(page.content || []));
+    if (!applicationId) { setScenarios([]); return; }
+    listScenariosByApplication(applicationId, { size: 100 }).then((page) => {
+      const list = page.content || [];
+      setScenarios(list);
+      setActiveId((cur) => (cur && list.some((s) => s.id === cur) ? cur : (list[0]?.id ?? null)));
+    });
   };
 
   useEffect(load, [applicationId]);
 
-  // Fetch endpoints for the selected application
   useEffect(() => {
-    if (!applicationId) {
-      setEndpoints([]);
-      return;
-    }
+    setSelectedIds([]);
+    setShowForm(false);
+    setEditingScenario(null);
+  }, [applicationId]);
+
+  useEffect(() => {
+    if (!applicationId) { setEndpoints([]); return; }
     setEndpointsLoading(true);
     setEndpointsError(null);
     fetchEndpoints(applicationId)
       .then((data) => {
-        // Handle both array and paginated response formats
-        const endpointsArray = Array.isArray(data?.content) 
-          ? data.content 
-          : Array.isArray(data) 
-          ? data 
-          : [];
+        const endpointsArray = Array.isArray(data?.content) ? data.content : Array.isArray(data) ? data : [];
         setEndpoints(endpointsArray);
       })
       .catch((err) => {
-        console.error('Failed to fetch endpoints:', err);
         setEndpointsError(err.response?.data?.message || 'Unable to fetch endpoints');
         setEndpoints([]);
       })
       .finally(() => setEndpointsLoading(false));
   }, [applicationId]);
 
-  // Helper to generate request body from endpoint schema
-  const generateRequestBodyFromSchema = (schema) => {
-    if (!schema || !schema.properties) return null;
-    const result = {};
-    Object.entries(schema.properties).forEach(([key, prop]) => {
-      const type = prop.type;
-      if (type === 'string') {
-        result[key] = `<${key}_string>`;
-      } else if (type === 'integer') {
-        result[key] = `<${key}_integer>`;
-      } else if (type === 'number') {
-        result[key] = `<${key}_number>`;
-      } else if (type === 'boolean') {
-        result[key] = `<${key}_boolean>`;
-      } else {
-        result[key] = `<${key}_${type}>`;
-      }
-    });
-    return result;
-  };
+  const filtered = scenarios.filter((s) => {
+    if (search && !(s.name || '').toLowerCase().includes(search.toLowerCase())) return false;
+    if (filter === 'positive') return s.scenarioType === 'POSITIVE';
+    if (filter === 'negative') return s.scenarioType === 'NEGATIVE';
+    if (filter === 'ai') return s.source === 'AI';
+    if (filter === 'jira') return s.source === 'JIRA';
+    if (filter === 'manual') return s.source === 'MANUAL';
+    return true;
+  });
 
-  // Helper to format request body for display
-  const formatRequestBodyForDisplay = (schema) => {
-    if (!schema || !schema.properties) return '';
-    const lines = ['{'];
-    const entries = Object.entries(schema.properties);
-    entries.forEach(([key, prop], idx) => {
-      const type = prop.type;
-      let value;
-      if (type === 'string') {
-        value = `"<${key}_string>"`;
-      } else if (type === 'integer') {
-        value = `<${key}_integer>`;
-      } else if (type === 'number') {
-        value = `<${key}_number>`;
-      } else if (type === 'boolean') {
-        value = `<${key}_boolean>`;
-      } else {
-        value = `<${key}_${type}>`;
-      }
-      const comma = idx < entries.length - 1 ? ',' : '';
-      lines.push(`  "${key}": ${value}${comma}`);
-    });
-    lines.push('}');
-    return lines.join('\n');
-  };
+  const activeScenario = scenarios.find((s) => s.id === activeId) || null;
+  const activeApplicationName = applications.find((a) => String(a.id) === String(applicationId))?.name;
 
-  const update = (field, value) => setForm((f) => ({ ...f, [field]: value }));
+  const toggleSelect = (id) => setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const clearSelection = () => setSelectedIds([]);
 
-  const handleCreate = async (e) => {
-    e.preventDefault();
+  const openCreateForm = () => { setEditingScenario(null); setShowForm(true); };
+  const openEditForm = (s) => { setEditingScenario(s); setShowForm(true); };
+  const closeForm = () => { setShowForm(false); setEditingScenario(null); };
+
+  const handleDeleteOne = async (id) => {
+    if (!confirm('Delete this scenario?')) return;
     setError(null);
     try {
-      // Build revised payload according to new API shape
-      const headersObj = apiTestData.headersEnabled
-        ? apiTestData.headers.reduce((acc, h) => {
-            if (h.name) acc[h.name] = h.value;
-            return acc;
-          }, {})
-        : undefined;
-
-      let requestBodyValuesObj;
-      if (apiTestData.requestBodyEnabled && apiTestData.requestBodyValues) {
-        try {
-          requestBodyValuesObj = JSON.parse(apiTestData.requestBodyValues);
-        } catch (err) {
-          setError('Invalid JSON in Request Body values');
-          setSubmitting(false);
-          return;
-        }
-      }
-
-      // use pathOrQueryParams object from state when enabled
-      const pathOrQueryParamsObj = apiTestData.pathParamsEnabled ? apiTestData.pathOrQueryParams : undefined;
-
-      const payload = {
-        applicationId: Number(applicationId),
-        name: form.name,
-        httpMethod: form.httpMethod,
-        endpoint: form.endpoint,
-        scenarioType: form.scenarioType,
-        source: form.source,
-        riskLevel: form.riskLevel,
-        active: apiTestData.active,
-        apiTestData: {
-          endpoint: apiTestData.endpoint || { path: form.endpoint, httpMethod: form.httpMethod, summary: '' },
-          headers: headersObj,
-          pathOrQueryParams: apiTestData.pathParamsEnabled ? pathOrQueryParamsObj : undefined,
-          requestBodyValues: requestBodyValuesObj,
-          expectedStatusCode: Number(apiTestData.expectedStatusCode),
-          expectedResponseBody: apiTestData.expectedResponseBody
-        }
-      };
-
-      // Remove undefined keys from apiTestData
-      if (!payload.apiTestData.headers) delete payload.apiTestData.headers;
-      if (!payload.apiTestData.pathOrQueryParams) delete payload.apiTestData.pathOrQueryParams;
-      if (!payload.apiTestData.requestBodyValues) delete payload.apiTestData.requestBodyValues;
-
-      await createScenario(payload);
-      setForm(EMPTY_FORM);
-      setShowForm(false);
+      await deleteScenario(id);
+      if (activeId === id) setActiveId(null);
+      setSelectedIds((prev) => prev.filter((x) => x !== id));
       load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Unable to create scenario');
+      setError(err.response?.data?.message || 'Unable to delete scenario');
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('Delete this scenario?')) return;
-    await deleteScenario(id);
-    load();
+  const handleBulkDelete = async () => {
+    if (!confirm(`Delete ${selectedIds.length} scenario(s)?`)) return;
+    setError(null);
+    try {
+      for (const id of selectedIds) await deleteScenario(id);
+      setSelectedIds([]);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Unable to delete selected scenarios');
+    }
+  };
+
+  const handleBulkDuplicate = async () => {
+    setError(null);
+    try {
+      const toDup = scenarios.filter((s) => selectedIds.includes(s.id));
+      for (const s of toDup) {
+        await createScenario({
+          applicationId: Number(applicationId),
+          name: `Copy of ${s.name}`,
+          httpMethod: s.httpMethod,
+          endpoint: s.endpoint,
+          scenarioType: s.scenarioType,
+          source: s.source,
+          riskLevel: s.riskLevel,
+          description: s.description,
+          active: s.active,
+          apiTestData: s.apiTestData
+        });
+      }
+      setSelectedIds([]);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Unable to duplicate selected scenarios');
+    }
   };
 
   return (
     <div>
       <div className="card-hd">
         <span className="card-title">Test Scenarios</span>
-        <RoleGate roles={EDIT_ROLES}>
-          <button className="btn btn-primary btn-sm" onClick={() => setShowForm((s) => !s)}>{showForm ? 'Cancel' : '+ New Scenario'}</button>
-        </RoleGate>
-      </div>
-
-      <div className="fld" style={{ maxWidth: 320, marginBottom: 14 }}>
-        <label>Application</label>
-        <select value={applicationId} onChange={(e) => setApplicationId(e.target.value)}>
-          {applications.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
-      </div>
-
-      {/* Display available endpoints for the selected application */}
-      {applicationId && (
-        <div style={{ marginBottom: 14 }}>
-          {endpointsLoading && (
-            <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>Loading endpoints�</div>
-          )}
-          {endpointsError && (
-            <div className="readonly-banner" style={{ marginBottom: 10 }}>{endpointsError}</div>
-          )}
-          {!endpointsLoading && endpoints.length > 0 && (
-            <div className="card" style={{ padding: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 8, color: 'var(--text-dim)' }}>Available Endpoints:</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {endpoints.map((ep, idx) => (
-                  <div key={idx} style={{ 
-                    backgroundColor: 'var(--bg-secondary)', 
-                    padding: '4px 8px', 
-                    borderRadius: 4, 
-                    fontSize: 11,
-                    cursor: 'pointer',
-                    border: '1px solid var(--border-color)',
-                    transition: 'all 0.2s'
-                  }} 
-                  onClick={() => {
-                    const method = ep.httpMethod || 'GET';
-                    const path = ep.path || ep.endpoint || '';
-                    update('httpMethod', method);
-                    update('endpoint', path);
-
-                    const parameters = Array.isArray(ep.parameters) ? ep.parameters : [];
-                    const headerFields = parameters.filter((p) => (p?.in || '').toLowerCase() === 'header');
-                    const pathQueryFields = parameters.filter((p) => {
-                      const loc = (p?.in || '').toLowerCase();
-                      return loc === 'path' || loc === 'query' || !loc;
-                    });
-                    setEndpointFields({ header: headerFields, pathQuery: pathQueryFields });
-
-                    setApiTestData((s) => ({
-                      ...s,
-                      endpoint: { path, httpMethod: method, summary: ep.summary || '', requestBody: ep.requestBody || null },
-                      headers: [],
-                      pathOrQueryParams: {}
-                    }));
-                  }}
-                  onMouseOver={(e) => e.target.style.backgroundColor = 'var(--accent)'}
-                  onMouseOut={(e) => e.target.style.backgroundColor = 'var(--bg-secondary)'}
-                  >
-                    <strong>{ep.httpMethod || 'GET'}</strong> {ep.path || ep.endpoint || '�'}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {!endpointsLoading && endpoints.length === 0 && !endpointsError && (
-            <div style={{ fontSize: 12, color: 'var(--text-dim)', fontStyle: 'italic' }}>No endpoints available for this application.</div>
-          )}
+        <div className="fld" style={{ marginBottom: 0, minWidth: 220 }}>
+          <label>Application</label>
+          <select value={applicationId} onChange={(e) => setApplicationId(e.target.value)}>
+            {applications.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
         </div>
-      )}
+      </div>
 
       {error && <div className="readonly-banner">{error}</div>}
 
-      <RoleGate roles={EDIT_ROLES}>
-        {showForm && (
-          <form className="card" onSubmit={handleCreate}>
-            <div className="fld"><label>Name *</label><input required value={form.name} onChange={(e) => update('name', e.target.value)} /></div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
-              <div className="fld"><label>Method</label>
-                <select value={form.httpMethod} onChange={(e) => update('httpMethod', e.target.value)}>
-                  {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => <option key={m}>{m}</option>)}
-                </select>
-              </div>
-              <div className="fld"><label>Endpoint</label><input value={form.endpoint} onChange={(e) => update('endpoint', e.target.value)} placeholder="/payments/charge" /></div>
+      <div className="sc-wrap">
+        <div className="sc-list-panel">
+          <div className="card sc-list-card">
+            <div className="sc-search">
+              <input placeholder="🔍 Search scenarios…" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-              <div className="fld"><label>Type</label>
-                <select value={form.scenarioType} onChange={(e) => update('scenarioType', e.target.value)}>
-                  <option value="POSITIVE">Positive</option><option value="NEGATIVE">Negative</option>
-                </select>
-              </div>
-              <div className="fld"><label>Source</label>
-                <select value={form.source} onChange={(e) => update('source', e.target.value)}>
-                  <option value="AI">AI</option><option value="MANUAL">Manual</option><option value="JIRA">Jira</option>
-                </select>
-              </div>
-              <div className="fld"><label>Risk</label>
-                <select value={form.riskLevel} onChange={(e) => update('riskLevel', e.target.value)}>
-                  <option value="LOW">Low</option><option value="MEDIUM">Medium</option><option value="HIGH">High</option>
-                </select>
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
-              <div className="fld">
-                <label>Active</label>
-                <input type="checkbox" checked={apiTestData.active} onChange={(e) => setApiTestData((s) => ({ ...s, active: e.target.checked }))} />
-              </div>
-              <div className="fld">
-                <label>Expected Status</label>
-                <input type="number" value={apiTestData.expectedStatusCode} onChange={(e) => setApiTestData((s) => ({ ...s, expectedStatusCode: e.target.value }))} />
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginTop: 8 }}>
-              <div className="fld">
-                <label><input type="checkbox" checked={apiTestData.headersEnabled} onChange={(e) => setApiTestData((s) => ({ ...s, headersEnabled: e.target.checked }))} /> Enable Headers</label>
-                {apiTestData.headersEnabled && (
-                  <div style={{ marginTop: 8 }}>
-                    {endpointFields.header.length > 0 && (
-                      <div style={{ marginBottom: 10 }}>
-                        <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4 }}>Detected from endpoint - check to include:</div>
-                        {endpointFields.header.map((f) => {
-                          const checked = apiTestData.headers.some((h) => h.name === f.name);
-                          const current = apiTestData.headers.find((h) => h.name === f.name);
-                          return (
-                            <div key={f.name} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(e) => setApiTestData((s) => ({
-                                  ...s,
-                                  headersEnabled: true,
-                                  headers: e.target.checked
-                                    ? [...s.headers, { name: f.name, value: `<${f.name}>` }]
-                                    : s.headers.filter((h) => h.name !== f.name)
-                                }))}
-                              />
-                              <span style={{ minWidth: 140 }}>{f.name}{f.required ? ' *' : ''}</span>
-                              <span className="tag" style={{ fontSize: 10 }}>{f.type || 'string'}</span>
-                              {checked && (
-                                <input
-                                  style={{ flex: 1 }}
-                                  value={current?.value || ''}
-                                  onChange={(e) => setApiTestData((s) => ({ ...s, headers: s.headers.map((h) => h.name === f.name ? { ...h, value: e.target.value } : h) }))}
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {apiTestData.headers.filter((h) => !endpointFields.header.some((f) => f.name === h.name)).map((h) => {
-                      const i = apiTestData.headers.indexOf(h);
-                      return (
-                        <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-                          <input placeholder="Name" value={h.name} onChange={(e) => setApiTestData((s) => { const headers = [...s.headers]; headers[i] = { ...headers[i], name: e.target.value }; return { ...s, headers }; })} />
-                          <input placeholder="Value" value={h.value} onChange={(e) => setApiTestData((s) => { const headers = [...s.headers]; headers[i] = { ...headers[i], value: e.target.value }; return { ...s, headers }; })} />
-                          <button type="button" className="btn btn-ghost" onClick={() => setApiTestData((s) => ({ ...s, headers: s.headers.filter((_, idx) => idx !== i) }))}>Remove</button>
-                        </div>
-                      );
-                    })}
-                    <button type="button" className="btn btn-primary btn-sm" onClick={() => setApiTestData((s) => ({ ...s, headers: [...s.headers, { name: '', value: '' }] }))}>Add Header</button>
-                  </div>
-                )}
-              </div>
-
-              <div className="fld">
-                <label><input type="checkbox" checked={apiTestData.pathParamsEnabled} onChange={(e) => setApiTestData((s) => ({ ...s, pathParamsEnabled: e.target.checked }))} /> Enable Path/Query Params</label>
-                {apiTestData.pathParamsEnabled && (
-                  <div style={{ marginTop: 8 }}>
-                    {endpointFields.pathQuery.length > 0 ? (
-                      <div>
-                        <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4 }}>Detected from endpoint - check to include:</div>
-                        {endpointFields.pathQuery.map((f) => {
-                          const params = apiTestData.pathOrQueryParams || {};
-                          const checked = Object.prototype.hasOwnProperty.call(params, f.name);
-                          return (
-                            <div key={f.name} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(e) => setApiTestData((s) => {
-                                  const next = { ...(s.pathOrQueryParams || {}) };
-                                  if (e.target.checked) next[f.name] = `<${f.name}>`;
-                                  else delete next[f.name];
-                                  return { ...s, pathParamsEnabled: true, pathOrQueryParams: next };
-                                })}
-                              />
-                              <span style={{ minWidth: 140 }}>{f.name}{f.required ? ' *' : ''}</span>
-                              <span className="tag" style={{ fontSize: 10 }}>{f.type || 'string'}</span>
-                              {checked && (
-                                <input
-                                  style={{ flex: 1 }}
-                                  value={params[f.name] || ''}
-                                  onChange={(e) => setApiTestData((s) => ({ ...s, pathOrQueryParams: { ...s.pathOrQueryParams, [f.name]: e.target.value } }))}
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>No path/query params detected from endpoint.</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div style={{ marginTop: 8 }}>
-              <label>
-                <input 
-                  type="checkbox" 
-                  checked={apiTestData.requestBodyEnabled} 
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      const schema = apiTestData.endpoint?.requestBody;
-                      if (schema) {
-                        const bodyObj = generateRequestBodyFromSchema(schema);
-                        setApiTestData((s) => ({ ...s, requestBodyEnabled: true, requestBodyValues: JSON.stringify(bodyObj), requestBodySchema: schema }));
-                      } else {
-                        setApiTestData((s) => ({ ...s, requestBodyEnabled: false, requestBodyValues: '' }));
-                      }
-                    } else {
-                      setApiTestData((s) => ({ ...s, requestBodyEnabled: false, requestBodyValues: '', requestBodySchema: null }));
-                    }
-                  }} 
-                /> 
-                Enable Request Body
-              </label>
-              {apiTestData.requestBodyEnabled && (
-                <div style={{ marginTop: 8, padding: 12, backgroundColor: '#f6f6f6', borderRadius: 4, fontSize: 12, fontFamily: 'monospace', border: '1px solid #ddd', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                  {formatRequestBodyForDisplay(apiTestData.requestBodySchema || apiTestData.endpoint?.requestBody)}
-                </div>
-              )}
-            </div>
-
-            <div style={{ marginTop: 8 }}>
-              <label>Expected Response Body</label>
-              <input value={apiTestData.expectedResponseBody} onChange={(e) => setApiTestData((s) => ({ ...s, expectedResponseBody: e.target.value }))} />
-            </div>
-            <div className="fld"><label>Description</label><textarea rows={2} value={form.description} onChange={(e) => update('description', e.target.value)} /></div>
-            <div className="form-ft"><button className="btn btn-primary" type="submit">Save Scenario</button></div>
-          </form>
-        )}
-      </RoleGate>
-
-      <div className="card">
-        {scenarios.length === 0 ? (
-          <div className="empty-state">No scenarios yet for this application.</div>
-        ) : (
-          <table>
-            <thead><tr><th>Name</th><th>Endpoint</th><th>Type</th><th>Source</th><th>Risk</th><th></th></tr></thead>
-            <tbody>
-              {scenarios.map((s) => (
-                <tr key={s.id}>
-                  <td>{s.name}</td>
-                  <td>{s.httpMethod} {s.endpoint}</td>
-                  <td><span className={`tag ${s.scenarioType === "POSITIVE" ? "tag-g" : "tag-r"}`}>{s.scenarioType}</span></td>
-                  <td><span className="tag tag-p">{s.source}</span></td>
-                  <td>{s.riskLevel}</td>
-                  <td>
-                    <RoleGate roles={EDIT_ROLES}>
-                      <button className="btn btn-red btn-sm" onClick={() => handleDelete(s.id)}>Delete</button>
-                    </RoleGate>
-                  </td>
-                </tr>
+            <div className="sc-filter-bar">
+              {FILTERS.map((f) => (
+                <span key={f.key} className={`sc-fc ${filter === f.key ? 'on' : ''}`} onClick={() => setFilter(f.key)}>{f.label}</span>
               ))}
-            </tbody>
-          </table>
-        )}
+            </div>
+
+            {selectedIds.length > 0 && (
+              <div className="sc-bulk-bar">
+                <span style={{ color: 'var(--purple)' }}>{selectedIds.length} selected</span>
+                <RoleGate roles={EDIT_ROLES}>
+                  <button className="btn btn-ghost btn-sm" onClick={handleBulkDuplicate}>⧉ Duplicate</button>
+                  <button className="btn btn-red btn-sm" onClick={handleBulkDelete}>🗑 Delete</button>
+                </RoleGate>
+                <button className="btn btn-ghost btn-sm" onClick={clearSelection}>✕ Clear</button>
+              </div>
+            )}
+
+            <div className="sc-items">
+              {filtered.length === 0 ? (
+                <div className="empty-state">{scenarios.length === 0 ? 'No scenarios yet for this application.' : 'No scenarios match.'}</div>
+              ) : filtered.map((s) => (
+                <div key={s.id} className={`sc-item ${activeId === s.id ? 'active' : ''}`} onClick={() => setActiveId(s.id)}>
+                  <span
+                    className={`sc-cb ${selectedIds.includes(s.id) ? 'on' : ''}`}
+                    onClick={(e) => { e.stopPropagation(); toggleSelect(s.id); }}
+                  >{selectedIds.includes(s.id) ? '✓' : ''}</span>
+                  <span>{s.scenarioType === 'POSITIVE' ? '✅' : '❌'}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="sc-name">{s.name}</div>
+                    <div className="sc-ep">{s.httpMethod} {s.endpoint}</div>
+                  </div>
+                  <span className={`sc-src sc-src-${(s.source || '').toLowerCase()}`}>{s.source}</span>
+                  <RoleGate roles={EDIT_ROLES}>
+                    <span className="sc-item-actions">
+                      <button type="button" className="sc-ic-btn edit" onClick={(e) => { e.stopPropagation(); openEditForm(s); }}>✎</button>
+                      <button type="button" className="sc-ic-btn del" onClick={(e) => { e.stopPropagation(); handleDeleteOne(s.id); }}>🗑</button>
+                    </span>
+                  </RoleGate>
+                </div>
+              ))}
+            </div>
+
+            <div className="sc-list-footer">
+              <RoleGate roles={EDIT_ROLES}>
+                <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={openCreateForm}>+ Add Scenario</button>
+              </RoleGate>
+            </div>
+          </div>
+        </div>
+
+        <div className="sc-right">
+          <div className="card sc-right-card">
+            {showForm ? (
+              <ScenarioForm
+                applicationId={applicationId}
+                endpoints={endpoints}
+                endpointsLoading={endpointsLoading}
+                endpointsError={endpointsError}
+                editingScenario={editingScenario}
+                onSaved={(shouldClose) => { load(); if (shouldClose) closeForm(); }}
+                onClose={closeForm}
+              />
+            ) : (
+              <>
+                <div className="sc-panel-tabs">
+                  {TABS.map((t) => (
+                    <div key={t.key} className={`sc-ptab ${activeTab === t.key ? 'active' : ''}`} onClick={() => setActiveTab(t.key)}>{t.label}</div>
+                  ))}
+                </div>
+                <div className="sc-panel-body">
+                  {!activeScenario ? (
+                    <div className="empty-state">Select a scenario from the list, or add one to get started.</div>
+                  ) : (
+                    <>
+                      {activeTab === 'details' && (
+                        <DetailsTab
+                          scenario={activeScenario}
+                          applicationName={activeApplicationName}
+                          onEdit={() => openEditForm(activeScenario)}
+                          onDelete={() => handleDeleteOne(activeScenario.id)}
+                          onRun={() => navigate('/execution')}
+                        />
+                      )}
+                      {activeTab === 'steps' && <StepsTab scenario={activeScenario} />}
+                      {activeTab === 'data' && <DataTab />}
+                      {activeTab === 'history' && <HistoryTab navigate={navigate} />}
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
-
