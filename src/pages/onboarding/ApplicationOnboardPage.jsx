@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useProjectCache } from '../../context/ProjectCacheContext';
-import { onboardApplication, updateApplication, getApplication, fetchApplicationSpec } from '../../api/applicationApi';
+import { onboardApplication, updateApplication, getApplication } from '../../api/applicationApi';
 
 export default function ApplicationOnboardPage() {
   const navigate = useNavigate();
@@ -26,6 +26,7 @@ export default function ApplicationOnboardPage() {
   useEffect(() => { 
     ensureLoaded().catch(err => console.error('Error loading projects:', err));
   }, [ensureLoaded]);
+  useEffect(() => { ensureLoaded(); }, [ensureLoaded]);
 
   useEffect(() => {
     if (!isEditMode) {
@@ -62,29 +63,14 @@ export default function ApplicationOnboardPage() {
       };
       if (isEditMode) {
         await updateApplication(id, payload);
-        navigate('/onboarding');
-        return;
+      } else {
+        await onboardApplication({ ...payload, autoSyncEnabled: false });
       }
-      const created = await onboardApplication({ ...payload, autoSyncEnabled: false });
-      setCreatedApp(created);
+      navigate('/onboarding');
     } catch (err) {
       setError(err.response?.data?.message || `Unable to ${isEditMode ? 'update' : 'onboard'} application`);
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const handleFetchNow = async () => {
-    setFetchError(null);
-    setFetching(true);
-    try {
-      await fetchApplicationSpec(createdApp.id);
-      setFetchedOk(true);
-    } catch (err) {
-      // Surfaces backend guidance verbatim, e.g. TLS_REQUIRED with instructions to configure the Project's keystore/truststore
-      setFetchError(err.response?.data?.message || 'Unable to fetch the specification');
-    } finally {
-      setFetching(false);
     }
   };
 
