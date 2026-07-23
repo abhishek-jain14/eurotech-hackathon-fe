@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import { listApplications } from '../../api/applicationApi';
 import { getApplicationReportSummary } from '../../api/reportApi';
+import { listExecutionsByApplication } from '../../api/executionApi';
+import ExecutionHistoryChart from '../../components/reports/ExecutionHistoryChart';
 
 export default function ReportsPage() {
   const [applications, setProjects] = useState([]);
   const [applicationId, setApplicationId] = useState('');
   const [summary, setSummary] = useState(null);
+  const [runs, setRuns] = useState([]);
 
   useEffect(() => {
     listApplications({ size: 100 }).then((page) => {
@@ -16,7 +19,9 @@ export default function ReportsPage() {
   }, []);
 
   useEffect(() => {
-    if (applicationId) getApplicationReportSummary(applicationId).then(setSummary);
+    if (!applicationId) return;
+    getApplicationReportSummary(applicationId).then(setSummary);
+    listExecutionsByApplication(applicationId, { size: 100 }).then((page) => setRuns(page.content || []));
   }, [applicationId]);
 
   return (
@@ -39,6 +44,10 @@ export default function ReportsPage() {
       <div className="card">
         <div className="card-hd"><span className="card-title">Average Duration</span></div>
         <div className="stat-val" style={{ fontSize: 22 }}>{summary ? `${summary.avgDurationSeconds.toFixed(0)}s` : '—'}</div>
+      </div>
+
+      <div className="card">
+        <ExecutionHistoryChart runs={runs} />
       </div>
     </div>
   );
