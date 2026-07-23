@@ -115,36 +115,48 @@ export default function ReportsPage() {
       {error && <div className="readonly-banner">{error}</div>}
 
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(7, 1fr)' }}>
-        <div className="stat-card">
-          <div className="stat-lbl">Pass Rate</div>
-          <div className="stat-val" style={{ color: 'var(--accent)' }}>{detail?.latestRun ? `${detail.latestRun.passRatePercent.toFixed(1)}%` : '—'}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-lbl">Total Tests</div>
-          <div className="stat-val">{detail?.latestRun?.totalTests ?? '—'}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-lbl">Passed</div>
-          <div className="stat-val" style={{ color: 'var(--accent)' }}>{detail?.latestRun?.passedCount ?? '—'}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-lbl">Failed</div>
-          <div className="stat-val" style={{ color: 'var(--red)' }}>{detail?.latestRun?.failedCount ?? '—'}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-lbl">Flaky</div>
-          <div className="stat-val" style={{ color: 'var(--amber)' }}>{detail?.flakyScenarios?.length ?? '—'}</div>
-        </div>
-        <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/coverage')} title="View in Coverage">
-          <div className="stat-lbl">Uncovered</div>
-          <div className="stat-val" style={{ color: 'var(--red)' }}>{detail?.uncoveredEndpoints ?? '—'}</div>
-          <div className="stat-delta">endpoints · view →</div>
-        </div>
-        <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/coverage')} title="View in Coverage">
-          <div className="stat-lbl">Partial</div>
-          <div className="stat-val" style={{ color: 'var(--amber)' }}>{detail?.partialEndpoints ?? '—'}</div>
-          <div className="stat-delta">endpoints · view →</div>
-        </div>
+        {!detail ? (
+          Array.from({ length: 7 }).map((_, index) => (
+            <div key={index} className="stat-card">
+              <div className="skeleton-line" style={{ width: '52%', marginBottom: 10 }} />
+              <div className="skeleton-block" style={{ height: 24, marginBottom: 8 }} />
+              <div className="skeleton-line" style={{ width: '60%' }} />
+            </div>
+          ))
+        ) : (
+          <>
+            <div className="stat-card">
+              <div className="stat-lbl">Pass Rate</div>
+              <div className="stat-val" style={{ color: 'var(--accent)' }}>{detail?.latestRun ? `${detail.latestRun.passRatePercent.toFixed(1)}%` : '—'}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-lbl">Total Tests</div>
+              <div className="stat-val">{detail?.latestRun?.totalTests ?? '—'}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-lbl">Passed</div>
+              <div className="stat-val" style={{ color: 'var(--accent)' }}>{detail?.latestRun?.passedCount ?? '—'}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-lbl">Failed</div>
+              <div className="stat-val" style={{ color: 'var(--red)' }}>{detail?.latestRun?.failedCount ?? '—'}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-lbl">Flaky</div>
+              <div className="stat-val" style={{ color: 'var(--amber)' }}>{detail?.flakyScenarios?.length ?? '—'}</div>
+            </div>
+            <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/coverage')} title="View in Coverage">
+              <div className="stat-lbl">Uncovered</div>
+              <div className="stat-val" style={{ color: 'var(--red)' }}>{detail?.uncoveredEndpoints ?? '—'}</div>
+              <div className="stat-delta">endpoints · view →</div>
+            </div>
+            <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/coverage')} title="View in Coverage">
+              <div className="stat-lbl">Partial</div>
+              <div className="stat-val" style={{ color: 'var(--amber)' }}>{detail?.partialEndpoints ?? '—'}</div>
+              <div className="stat-delta">endpoints · view →</div>
+            </div>
+          </>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>

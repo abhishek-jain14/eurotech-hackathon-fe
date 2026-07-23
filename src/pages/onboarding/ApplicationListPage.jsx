@@ -61,7 +61,13 @@ export default function ApplicationListPage() {
 
       <div className="card">
         {loading ? (
-          <div className="empty-state">Loading…</div>
+          <div>
+            <div className="skeleton-line" style={{ width: '38%', marginBottom: 12 }} />
+            <div className="skeleton-block" />
+            <div className="skeleton-line" style={{ width: '92%' }} />
+            <div className="skeleton-line" style={{ width: '86%' }} />
+            <div className="skeleton-line" style={{ width: '76%' }} />
+          </div>
         ) : applications.length === 0 ? (
           <div className="empty-state">No applications onboarded yet. Create a Project first, then onboard an application under it.</div>
         ) : (
