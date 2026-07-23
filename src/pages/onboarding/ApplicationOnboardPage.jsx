@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useProjectCache } from '../../context/ProjectCacheContext';
-import { onboardApplication, updateApplication, getApplication, fetchApplicationSpec } from '../../api/applicationApi';
+import { onboardApplication, updateApplication, getApplication } from '../../api/applicationApi';
 
 export default function ApplicationOnboardPage() {
   const navigate = useNavigate();
@@ -16,12 +16,6 @@ export default function ApplicationOnboardPage() {
   const [loading, setLoading] = useState(isEditMode);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
-
-  // Step 2 (create flow only): fetch-now step, shown after the application record exists
-  const [createdApp, setCreatedApp] = useState(null);
-  const [fetchError, setFetchError] = useState(null);
-  const [fetching, setFetching] = useState(false);
-  const [fetchedOk, setFetchedOk] = useState(false);
 
   useEffect(() => { ensureLoaded(); }, [ensureLoaded]);
 
@@ -60,11 +54,10 @@ export default function ApplicationOnboardPage() {
       };
       if (isEditMode) {
         await updateApplication(id, payload);
-        navigate('/onboarding');
-        return;
+      } else {
+        await onboardApplication({ ...payload, autoSyncEnabled: false });
       }
-      const created = await onboardApplication({ ...payload, autoSyncEnabled: false });
-      setCreatedApp(created);
+      navigate('/onboarding');
     } catch (err) {
       setError(err.response?.data?.message || `Unable to ${isEditMode ? 'update' : 'onboard'} application`);
     } finally {
@@ -72,59 +65,8 @@ export default function ApplicationOnboardPage() {
     }
   };
 
-  const handleFetchNow = async () => {
-    setFetchError(null);
-    setFetching(true);
-    try {
-      await fetchApplicationSpec(createdApp.id);
-      setFetchedOk(true);
-    } catch (err) {
-      // Surfaces backend guidance verbatim, e.g. TLS_REQUIRED with instructions to configure the Project's keystore/truststore
-      setFetchError(err.response?.data?.message || 'Unable to fetch the specification');
-    } finally {
-      setFetching(false);
-    }
-  };
-
   if (loading) {
     return <div className="card"><div className="empty-state">Loading…</div></div>;
-  }
-
-  if (createdApp) {
-    return (
-      <div className="card" style={{ maxWidth: 560 }}>
-        <div className="card-hd"><span className="card-title">Fetch Specification</span></div>
-        <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 14 }}>
-          <strong>{createdApp.name}</strong> was onboarded under project <strong>{createdApp.projectName}</strong>.
-          Fetch the spec now from the resolved URL below using the project's configured keystore/truststore (if any).
-        </div>
-        <div className="fld"><label>Resolved URL</label><input readOnly value={createdApp.specSourceUrl} /></div>
-
-        {fetchedOk ? (
-          <div>
-            <div className="readonly-banner" style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>Specification fetched and stored.</div>
-            <button className="btn btn-primary" onClick={() => navigate('/onboarding')}>Done</button>
-          </div>
-        ) : (
-          <>
-            {fetchError && (
-              <div className="login-error" style={{ marginBottom: 10 }}>
-                {fetchError}
-                {fetchError.includes('TLS') && (
-                  <div style={{ marginTop: 6 }}>
-                    <a href="/projects" style={{ color: 'var(--accent)' }}>Configure the project's keystore/truststore →</a>
-                  </div>
-                )}
-              </div>
-            )}
-            <div className="form-ft">
-              <button className="btn btn-ghost" onClick={() => navigate('/onboarding')}>Skip for now</button>
-              <button className="btn btn-primary" onClick={handleFetchNow} disabled={fetching}>{fetching ? 'Fetching…' : 'Fetch Now'}</button>
-            </div>
-          </>
-        )}
-      </div>
-    );
   }
 
   return (
