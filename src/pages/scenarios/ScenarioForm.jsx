@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { listSpecVersions, generateScenariosForSpecVersion } from '../../api/applicationApi';
 import { createScenario, updateScenario } from '../../api/scenarioApi';
+import { useProjectCache } from '../../context/ProjectCacheContext';
 
 const EMPTY_FORM = { name: '', httpMethod: 'GET', endpoint: '', scenarioType: 'POSITIVE', source: 'MANUAL', riskLevel: 'MEDIUM', description: '' };
 const EMPTY_API_TEST_DATA = {
@@ -38,34 +39,19 @@ const generateRequestBodyFromSchema = (schema) => {
   return result;
 };
 
-// Helper to format request body for display
-const formatRequestBodyForDisplay = (schema) => {
-  if (!schema || !schema.properties) return '';
-  const lines = ['{'];
-  const entries = Object.entries(schema.properties);
-  entries.forEach(([key, prop], idx) => {
-    const type = prop.type;
-    let value;
-    if (type === 'string') value = `"<${key}_string>"`;
-    else if (type === 'integer') value = `<${key}_integer>`;
-    else if (type === 'number') value = `<${key}_number>`;
-    else if (type === 'boolean') value = `<${key}_boolean>`;
-    else value = `<${key}_${type}>`;
-    const comma = idx < entries.length - 1 ? ',' : '';
-    lines.push(`  "${key}": ${value}${comma}`);
-  });
-  lines.push('}');
-  return lines.join('\n');
-};
-
-export default function ScenarioForm({ applicationId, endpoints, endpointsLoading, endpointsError, editingScenario, onSaved, onClose }) {
+export default function ScenarioForm({ applicationId, projectId, endpoints, endpointsLoading, endpointsError, editingScenario, onSaved, onClose }) {
   const isEdit = !!editingScenario;
   const [mode, setMode] = useState(isEdit ? 'manual' : null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [apiTestData, setApiTestData] = useState(EMPTY_API_TEST_DATA);
   const [endpointFields, setEndpointFields] = useState({ header: [], pathQuery: [] });
+  const [jiraTicketKey, setJiraTicketKey] = useState('');
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  const { projects, ensureLoaded } = useProjectCache();
+  useEffect(() => { ensureLoaded(); }, [ensureLoaded]);
+  const project = projects.find((p) => String(p.id) === String(projectId));
 
   const [versions, setVersions] = useState([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
@@ -97,7 +83,7 @@ export default function ScenarioForm({ applicationId, endpoints, endpointsLoadin
         pathParamsEnabled: Object.keys(paramsObj).length > 0,
         pathOrQueryParams: paramsObj,
         requestBodyEnabled: !!atd.requestBodyValues,
-        requestBodyValues: atd.requestBodyValues ? JSON.stringify(atd.requestBodyValues) : '',
+        requestBodyValues: atd.requestBodyValues ? JSON.stringify(atd.requestBodyValues, null, 2) : '',
         requestBodySchema: null,
         expectedStatusCode: atd.expectedStatusCode ?? 200,
         expectedResponseBody: atd.expectedResponseBody || '',
@@ -120,6 +106,7 @@ export default function ScenarioForm({ applicationId, endpoints, endpointsLoadin
       setForm(EMPTY_FORM);
       setApiTestData(EMPTY_API_TEST_DATA);
       setEndpointFields({ header: [], pathQuery: [] });
+      setJiraTicketKey('');
     }
   }, [editingScenario, endpoints]);
 
@@ -137,6 +124,12 @@ export default function ScenarioForm({ applicationId, endpoints, endpointsLoadin
   const currentVersion = versions.find((v) => v.status === 'CURRENT');
 
   const update = (field, val) => setForm((f) => ({ ...f, [field]: val }));
+
+  const pickMode = (m) => {
+    setMode(m);
+    if (m === 'jira') update('source', 'JIRA');
+    else if (m === 'manual') update('source', 'MANUAL');
+  };
 
   const handleEndpointPick = (ep) => {
     const method = ep.httpMethod || 'GET';
@@ -196,9 +189,12 @@ export default function ScenarioForm({ applicationId, endpoints, endpointsLoadin
 
       const pathOrQueryParamsObj = apiTestData.pathParamsEnabled ? apiTestData.pathOrQueryParams : undefined;
 
+      const ticketKey = jiraTicketKey.trim();
+      const name = mode === 'jira' && ticketKey && !form.name.startsWith(ticketKey) ? `${ticketKey} ${form.name}` : form.name;
+
       const payload = {
         applicationId: Number(applicationId),
-        name: form.name,
+        name,
         httpMethod: form.httpMethod,
         endpoint: form.endpoint,
         scenarioType: form.scenarioType,
@@ -220,10 +216,13 @@ export default function ScenarioForm({ applicationId, endpoints, endpointsLoadin
       if (!payload.apiTestData.pathOrQueryParams) delete payload.apiTestData.pathOrQueryParams;
       if (!payload.apiTestData.requestBodyValues) delete payload.apiTestData.requestBodyValues;
 
-      if (isEdit) await updateScenario(editingScenario.id, payload);
-      else await createScenario(payload);
-
-      onSaved(true);
+      if (isEdit) {
+        await updateScenario(editingScenario.id, payload);
+        onSaved(true);
+      } else {
+        const created = await createScenario(payload);
+        onSaved(true, created?.id);
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Unable to save scenario');
     } finally {
@@ -231,7 +230,7 @@ export default function ScenarioForm({ applicationId, endpoints, endpointsLoadin
     }
   };
 
-  const title = isEdit ? 'Edit Scenario' : mode === 'ai' ? 'Generate with AI' : mode === 'manual' ? 'Add Scenario — Manual Entry' : 'Add Scenario';
+  const title = isEdit ? 'Edit Scenario' : mode === 'ai' ? 'Generate with AI' : mode === 'manual' ? 'Add Scenario — Manual Entry' : mode === 'jira' ? 'Add Scenario — From Jira' : 'Add Scenario';
 
   return (
     <div className="sc-form-overlay open">
@@ -240,7 +239,16 @@ export default function ScenarioForm({ applicationId, endpoints, endpointsLoadin
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMode(null)}>← Back</button>
         )}
         <div className="sc-form-title">{title}</div>
-        <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={onClose}>✕ Close</button>
+        {(mode === 'manual' || mode === 'jira') && (
+          <label className="sc-active-toggle">
+            <span>Active</span>
+            <span
+              className={`sc-toggle ${apiTestData.active ? 'on' : ''}`}
+              onClick={() => setApiTestData((s) => ({ ...s, active: !s.active }))}
+            />
+          </label>
+        )}
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>✕ Close</button>
       </div>
 
       <div className="sc-form-scroll">
@@ -248,15 +256,23 @@ export default function ScenarioForm({ applicationId, endpoints, endpointsLoadin
 
         {!isEdit && mode === null && (
           <div className="sc-mode-picker">
-            <div className="sc-mode-card" onClick={() => setMode('manual')}>
+            <div className="sc-mode-card" onClick={() => pickMode('manual')}>
               <div className="sc-mode-icon">✏️</div>
               <div className="sc-mode-title">Manual Entry</div>
               <div className="sc-mode-desc">Define endpoint, type, steps and expected results yourself with full control.</div>
+              <span className="sc-mode-badge manual">Manual</span>
             </div>
-            <div className="sc-mode-card" onClick={() => setMode('ai')}>
+            <div className="sc-mode-card" onClick={() => pickMode('ai')}>
               <div className="sc-mode-icon">✦</div>
               <div className="sc-mode-title">Generate with AI</div>
               <div className="sc-mode-desc">Generate scenarios from this application's current approved spec version.</div>
+              <span className="sc-mode-badge ai">AI Powered</span>
+            </div>
+            <div className="sc-mode-card" onClick={() => pickMode('jira')}>
+              <div className="sc-mode-icon">◉</div>
+              <div className="sc-mode-title">From Jira</div>
+              <div className="sc-mode-desc">Reference an existing Jira ticket while you fill in the endpoint, type, steps and expected results.</div>
+              <span className="sc-mode-badge jira">Jira</span>
             </div>
           </div>
         )}
@@ -289,8 +305,26 @@ export default function ScenarioForm({ applicationId, endpoints, endpointsLoadin
           </div>
         )}
 
-        {mode === 'manual' && (
+        {(mode === 'manual' || mode === 'jira') && (
           <form id="sc-manual-form" onSubmit={handleSubmit}>
+            <div style={{ fontSize: 13, fontWeight: 'bold', marginBottom: 14 }}>{mode === 'jira' ? 'Import from Jira' : 'Manual Entry'}</div>
+
+            {mode === 'jira' && (
+              <div className="fld" style={{ marginBottom: 14 }}>
+                <label>Jira Ticket Key</label>
+                <input placeholder="e.g. PAY-441" value={jiraTicketKey} onChange={(e) => setJiraTicketKey(e.target.value)} />
+                {project?.jiraUrl ? (
+                  <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6 }}>
+                    Reference: <a href={project.jiraUrl} target="_blank" rel="noreferrer">{project.jiraUrl}</a>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 6, fontStyle: 'italic' }}>
+                    No Jira URL configured for this project — add one under Projects to link tickets directly.
+                  </div>
+                )}
+              </div>
+            )}
+
             {applicationId && (
               <div style={{ marginBottom: 14 }}>
                 {endpointsLoading && <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>Loading endpoints…</div>}
@@ -333,7 +367,7 @@ export default function ScenarioForm({ applicationId, endpoints, endpointsLoadin
                 </select>
               </div>
               <div className="fld"><label>Source</label>
-                <select value={form.source} onChange={(e) => update('source', e.target.value)}>
+                <select value={form.source} disabled={mode === 'jira'} onChange={(e) => update('source', e.target.value)}>
                   <option value="AI">AI</option><option value="MANUAL">Manual</option><option value="JIRA">Jira</option>
                 </select>
               </div>
@@ -343,20 +377,15 @@ export default function ScenarioForm({ applicationId, endpoints, endpointsLoadin
                 </select>
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div className="fld">
-                <label>Active</label>
-                <input type="checkbox" checked={apiTestData.active} onChange={(e) => setApiTestData((s) => ({ ...s, active: e.target.checked }))} />
-              </div>
-              <div className="fld">
-                <label>Expected Status</label>
-                <input type="number" value={apiTestData.expectedStatusCode} onChange={(e) => setApiTestData((s) => ({ ...s, expectedStatusCode: e.target.value }))} />
-              </div>
-            </div>
+            <div className="fld"><label>Description</label><textarea rows={2} value={form.description} onChange={(e) => update('description', e.target.value)} /></div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginTop: 4 }}>
-              <div className="fld">
-                <label><input type="checkbox" checked={apiTestData.headersEnabled} onChange={(e) => setApiTestData((s) => ({ ...s, headersEnabled: e.target.checked }))} /> Enable Headers</label>
+            <div className="fld" style={{ marginTop: 6 }}>
+              <label style={{ marginBottom: 8 }}>Request Fields</label>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ textTransform: 'none', letterSpacing: 0, fontSize: 12, color: 'var(--text)' }}>
+                  <input type="checkbox" checked={apiTestData.headersEnabled} onChange={(e) => setApiTestData((s) => ({ ...s, headersEnabled: e.target.checked }))} /> Enable Headers
+                </label>
                 {apiTestData.headersEnabled && (
                   <div style={{ marginTop: 8 }}>
                     {endpointFields.header.length > 0 && (
@@ -407,8 +436,10 @@ export default function ScenarioForm({ applicationId, endpoints, endpointsLoadin
                 )}
               </div>
 
-              <div className="fld">
-                <label><input type="checkbox" checked={apiTestData.pathParamsEnabled} onChange={(e) => setApiTestData((s) => ({ ...s, pathParamsEnabled: e.target.checked }))} /> Enable Path/Query Params</label>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ textTransform: 'none', letterSpacing: 0, fontSize: 12, color: 'var(--text)' }}>
+                  <input type="checkbox" checked={apiTestData.pathParamsEnabled} onChange={(e) => setApiTestData((s) => ({ ...s, pathParamsEnabled: e.target.checked }))} /> Enable Path/Query Params
+                </label>
                 {apiTestData.pathParamsEnabled && (
                   <div style={{ marginTop: 8 }}>
                     {endpointFields.pathQuery.length > 0 ? (
@@ -448,49 +479,56 @@ export default function ScenarioForm({ applicationId, endpoints, endpointsLoadin
                   </div>
                 )}
               </div>
-            </div>
 
-            <div style={{ marginTop: 4 }}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={apiTestData.requestBodyEnabled}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      const schema = apiTestData.endpoint?.requestBody;
-                      if (schema) {
-                        const bodyObj = generateRequestBodyFromSchema(schema);
-                        setApiTestData((s) => ({ ...s, requestBodyEnabled: true, requestBodyValues: JSON.stringify(bodyObj), requestBodySchema: schema }));
+              <div>
+                <label style={{ textTransform: 'none', letterSpacing: 0, fontSize: 12, color: 'var(--text)' }}>
+                  <input
+                    type="checkbox"
+                    checked={apiTestData.requestBodyEnabled}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        const schema = apiTestData.endpoint?.requestBody;
+                        const bodyObj = schema ? generateRequestBodyFromSchema(schema) : {};
+                        setApiTestData((s) => ({ ...s, requestBodyEnabled: true, requestBodyValues: JSON.stringify(bodyObj, null, 2), requestBodySchema: schema || null }));
                       } else {
-                        setApiTestData((s) => ({ ...s, requestBodyEnabled: false, requestBodyValues: '' }));
+                        setApiTestData((s) => ({ ...s, requestBodyEnabled: false, requestBodyValues: '', requestBodySchema: null }));
                       }
-                    } else {
-                      setApiTestData((s) => ({ ...s, requestBodyEnabled: false, requestBodyValues: '', requestBodySchema: null }));
-                    }
-                  }}
-                />
-                Enable Request Body
-              </label>
-              {apiTestData.requestBodyEnabled && (
-                <div style={{ marginTop: 8, padding: 12, background: 'var(--surface-2)', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', border: '1px solid var(--border-2)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                  {formatRequestBodyForDisplay(apiTestData.requestBodySchema || apiTestData.endpoint?.requestBody)}
-                </div>
-              )}
+                    }}
+                  />
+                  Enable Request Body
+                </label>
+                {apiTestData.requestBodyEnabled && (
+                  <textarea
+                    rows={6}
+                    style={{ marginTop: 8, width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border-2)', borderRadius: 6, padding: 10, color: 'var(--text)', fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }}
+                    value={apiTestData.requestBodyValues}
+                    onChange={(e) => setApiTestData((s) => ({ ...s, requestBodyValues: e.target.value }))}
+                  />
+                )}
+              </div>
             </div>
 
-            <div className="fld" style={{ marginTop: 8 }}>
-              <label>Expected Response Body</label>
-              <input value={apiTestData.expectedResponseBody} onChange={(e) => setApiTestData((s) => ({ ...s, expectedResponseBody: e.target.value }))} />
+            <div className="fld" style={{ marginTop: 6 }}>
+              <label style={{ marginBottom: 8 }}>Response Fields</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
+                <div className="fld">
+                  <label>Expected Status</label>
+                  <input type="number" value={apiTestData.expectedStatusCode} onChange={(e) => setApiTestData((s) => ({ ...s, expectedStatusCode: e.target.value }))} />
+                </div>
+                <div className="fld">
+                  <label>Expected Response Body</label>
+                  <input value={apiTestData.expectedResponseBody} onChange={(e) => setApiTestData((s) => ({ ...s, expectedResponseBody: e.target.value }))} />
+                </div>
+              </div>
             </div>
-            <div className="fld"><label>Description</label><textarea rows={2} value={form.description} onChange={(e) => update('description', e.target.value)} /></div>
           </form>
         )}
       </div>
 
-      {mode === 'manual' && (
+      {(mode === 'manual' || mode === 'jira') && (
         <div className="form-ft">
           <button type="button" className="btn btn-ghost" onClick={onClose}>✕ Cancel</button>
-          <button type="submit" form="sc-manual-form" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save Scenario'}</button>
+          <button type="submit" form="sc-manual-form" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : mode === 'jira' ? 'Import from Jira' : 'Save Scenario'}</button>
         </div>
       )}
     </div>
