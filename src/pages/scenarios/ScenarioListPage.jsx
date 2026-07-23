@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listApplications, fetchEndpoints } from '../../api/applicationApi';
-import { listScenariosByApplication, createScenario, deleteScenario } from '../../api/scenarioApi';
+import { listScenariosByApplication, createScenario, updateScenario, deleteScenario } from '../../api/scenarioApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
 import ScenarioForm from './ScenarioForm';
@@ -34,8 +34,9 @@ const sourceTagClass = (source) => (source === 'AI' ? 'tag-p' : source === 'JIRA
 const sourceLabel = (source) => (source === 'AI' ? 'AI Generated' : source === 'JIRA' ? 'From Jira' : 'Manual');
 const riskTagClass = (risk) => (risk === 'HIGH' ? 'tag-r' : risk === 'MEDIUM' ? 'tag-a' : 'tag-g');
 
-function DetailsTab({ scenario, applicationName, onEdit, onDelete, onRun }) {
+function DetailsTab({ scenario, applicationName, onEdit, onDelete, onRun, onToggleActive }) {
   const sc = scenario;
+  const isActive = sc.active !== false;
   const statusCode = sc.apiTestData?.expectedStatusCode;
   const statusColor = statusCode == null ? null : statusCode < 300 ? 'var(--accent)' : statusCode < 500 ? 'var(--amber)' : 'var(--red)';
   const createdAtLabel = formatTimestamp(sc.createdAt);
@@ -43,6 +44,14 @@ function DetailsTab({ scenario, applicationName, onEdit, onDelete, onRun }) {
   return (
     <div>
       <div className="sc-panel-actions">
+        <label className="sc-active-toggle" style={{ marginLeft: 0, marginRight: 'auto' }}>
+          <span>{isActive ? 'Active' : 'Inactive'}</span>
+          <span
+            className={`sc-toggle ${isActive ? 'on' : ''}`}
+            onClick={onToggleActive}
+            title={isActive ? 'Active — click to disable' : 'Inactive — click to enable'}
+          />
+        </label>
         <RoleGate roles={EDIT_ROLES}>
           <button className="btn btn-ghost btn-sm" onClick={onEdit}>✎ Edit</button>
           <button className="btn btn-red btn-sm" onClick={onDelete}>🗑 Delete</button>
@@ -50,43 +59,45 @@ function DetailsTab({ scenario, applicationName, onEdit, onDelete, onRun }) {
         <button className="btn btn-primary btn-sm" onClick={onRun}>▶ Run</button>
       </div>
 
-      <div className="sc-detail-title">{sc.name}</div>
-      <div className="sc-detail-tags">
-        <span className={`tag ${typeTagClass(sc.scenarioType)}`}>{sc.scenarioType === 'POSITIVE' ? 'positive' : 'negative'}</span>
-        <span className={`tag ${sourceTagClass(sc.source)}`}>{sourceLabel(sc.source)}</span>
-        {sc.riskLevel && <span className={`tag ${riskTagClass(sc.riskLevel)}`}>{sc.riskLevel.charAt(0) + sc.riskLevel.slice(1).toLowerCase()} Risk</span>}
-        {statusCode != null && <span className="tag" style={{ borderColor: statusColor, color: statusColor }}>HTTP {statusCode}</span>}
-      </div>
-
-      {sc.description && <div className="sc-detail-desc">{sc.description}</div>}
-
-      <div className="sc-meta-list">
-        {applicationName && (
-          <div className="sc-meta-row"><span>Application</span><span style={{ color: 'var(--accent)' }}>{applicationName}</span></div>
-        )}
-        {sc.endpoint && (
-          <div className="sc-meta-row"><span>Endpoint</span><span>{sc.httpMethod} {sc.endpoint}</span></div>
-        )}
-        {sc.scenarioType && (
-          <div className="sc-meta-row"><span>Type</span><span className={`tag ${typeTagClass(sc.scenarioType)}`}>{sc.scenarioType}</span></div>
-        )}
-        {sc.riskLevel && (
-          <div className="sc-meta-row"><span>Risk Level</span><span className={`tag ${riskTagClass(sc.riskLevel)}`}>{sc.riskLevel}</span></div>
-        )}
-        {sc.source && (
-          <div className="sc-meta-row"><span>Source</span><span className={`tag ${sourceTagClass(sc.source)}`}>{sourceLabel(sc.source)}</span></div>
-        )}
-        {createdAtLabel && (
-          <div className="sc-meta-row"><span>Created</span><span style={{ color: 'var(--text-dim)' }}>{createdAtLabel}{sc.createdBy ? ` · ${sc.createdBy}` : ''}</span></div>
-        )}
-      </div>
-
-      {sc.source === 'AI' && (
-        <div className="sc-ai-box">
-          <div className="sc-ai-box-title">✦ AI Context</div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>Generated from {sc.httpMethod} {sc.endpoint}.</div>
+      <div className={isActive ? '' : 'sc-detail-off'}>
+        <div className="sc-detail-title">{sc.name}</div>
+        <div className="sc-detail-tags">
+          <span className={`tag ${typeTagClass(sc.scenarioType)}`}>{sc.scenarioType === 'POSITIVE' ? 'positive' : 'negative'}</span>
+          <span className={`tag ${sourceTagClass(sc.source)}`}>{sourceLabel(sc.source)}</span>
+          {sc.riskLevel && <span className={`tag ${riskTagClass(sc.riskLevel)}`}>{sc.riskLevel.charAt(0) + sc.riskLevel.slice(1).toLowerCase()} Risk</span>}
+          {statusCode != null && <span className="tag" style={{ borderColor: statusColor, color: statusColor }}>HTTP {statusCode}</span>}
         </div>
-      )}
+
+        {sc.description && <div className="sc-detail-desc">{sc.description}</div>}
+
+        <div className="sc-meta-list">
+          {applicationName && (
+            <div className="sc-meta-row"><span>Application</span><span style={{ color: 'var(--accent)' }}>{applicationName}</span></div>
+          )}
+          {sc.endpoint && (
+            <div className="sc-meta-row"><span>Endpoint</span><span>{sc.httpMethod} {sc.endpoint}</span></div>
+          )}
+          {sc.scenarioType && (
+            <div className="sc-meta-row"><span>Type</span><span className={`tag ${typeTagClass(sc.scenarioType)}`}>{sc.scenarioType}</span></div>
+          )}
+          {sc.riskLevel && (
+            <div className="sc-meta-row"><span>Risk Level</span><span className={`tag ${riskTagClass(sc.riskLevel)}`}>{sc.riskLevel}</span></div>
+          )}
+          {sc.source && (
+            <div className="sc-meta-row"><span>Source</span><span className={`tag ${sourceTagClass(sc.source)}`}>{sourceLabel(sc.source)}</span></div>
+          )}
+          {createdAtLabel && (
+            <div className="sc-meta-row"><span>Created</span><span style={{ color: 'var(--text-dim)' }}>{createdAtLabel}{sc.createdBy ? ` · ${sc.createdBy}` : ''}</span></div>
+          )}
+        </div>
+
+        {sc.source === 'AI' && (
+          <div className="sc-ai-box">
+            <div className="sc-ai-box-title">✦ AI Context</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>Generated from {sc.httpMethod} {sc.endpoint}.</div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -148,16 +159,25 @@ export default function ScenarioListPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const load = () => {
+  const load = (focusId) => {
     if (!applicationId) { setScenarios([]); return; }
     listScenariosByApplication(applicationId, { size: 100 }).then((page) => {
       const list = page.content || [];
       setScenarios(list);
-      setActiveId((cur) => (cur && list.some((s) => s.id === cur) ? cur : (list[0]?.id ?? null)));
+      if (focusId != null && list.some((s) => s.id === focusId)) {
+        setActiveId(focusId);
+      } else {
+        setActiveId((cur) => (cur && list.some((s) => s.id === cur) ? cur : (list[0]?.id ?? null)));
+      }
     });
   };
 
-  useEffect(load, [applicationId]);
+  useEffect(() => load(), [applicationId]);
+
+  useEffect(() => {
+    if (activeId == null) return;
+    document.getElementById(`sc-item-${activeId}`)?.scrollIntoView({ block: 'nearest' });
+  }, [activeId]);
 
   useEffect(() => {
     setSelectedIds([]);
@@ -192,7 +212,8 @@ export default function ScenarioListPage() {
   });
 
   const activeScenario = scenarios.find((s) => s.id === activeId) || null;
-  const activeApplicationName = applications.find((a) => String(a.id) === String(applicationId))?.name;
+  const selectedApplication = applications.find((a) => String(a.id) === String(applicationId));
+  const activeApplicationName = selectedApplication?.name;
 
   const toggleSelect = (id) => setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   const clearSelection = () => setSelectedIds([]);
@@ -211,6 +232,27 @@ export default function ScenarioListPage() {
       load();
     } catch (err) {
       setError(err.response?.data?.message || 'Unable to delete scenario');
+    }
+  };
+
+  const handleToggleActive = async (s) => {
+    setError(null);
+    try {
+      await updateScenario(s.id, {
+        applicationId: Number(applicationId),
+        name: s.name,
+        httpMethod: s.httpMethod,
+        endpoint: s.endpoint,
+        scenarioType: s.scenarioType,
+        source: s.source,
+        riskLevel: s.riskLevel,
+        description: s.description,
+        active: !s.active,
+        apiTestData: s.apiTestData
+      });
+      load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Unable to update scenario status');
     }
   };
 
@@ -292,7 +334,12 @@ export default function ScenarioListPage() {
               {filtered.length === 0 ? (
                 <div className="empty-state">{scenarios.length === 0 ? 'No scenarios yet for this application.' : 'No scenarios match.'}</div>
               ) : filtered.map((s) => (
-                <div key={s.id} className={`sc-item ${activeId === s.id ? 'active' : ''}`} onClick={() => setActiveId(s.id)}>
+                <div
+                  key={s.id}
+                  id={`sc-item-${s.id}`}
+                  className={`sc-item ${activeId === s.id ? 'active' : ''} ${s.active === false ? 'sc-item-off' : ''}`}
+                  onClick={() => setActiveId(s.id)}
+                >
                   <span
                     className={`sc-cb ${selectedIds.includes(s.id) ? 'on' : ''}`}
                     onClick={(e) => { e.stopPropagation(); toggleSelect(s.id); }}
@@ -326,11 +373,12 @@ export default function ScenarioListPage() {
             {showForm ? (
               <ScenarioForm
                 applicationId={applicationId}
+                projectId={selectedApplication?.projectId}
                 endpoints={endpoints}
                 endpointsLoading={endpointsLoading}
                 endpointsError={endpointsError}
                 editingScenario={editingScenario}
-                onSaved={(shouldClose) => { load(); if (shouldClose) closeForm(); }}
+                onSaved={(shouldClose, newId) => { load(newId); if (shouldClose) closeForm(); }}
                 onClose={closeForm}
               />
             ) : (
@@ -352,6 +400,7 @@ export default function ScenarioListPage() {
                           onEdit={() => openEditForm(activeScenario)}
                           onDelete={() => handleDeleteOne(activeScenario.id)}
                           onRun={() => navigate('/execution')}
+                          onToggleActive={() => handleToggleActive(activeScenario)}
                         />
                       )}
                       {activeTab === 'steps' && <StepsTab scenario={activeScenario} />}
