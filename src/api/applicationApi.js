@@ -1,6 +1,6 @@
-import axiosClient from './axiosClient';
+﻿import axiosClient from "./axiosClient";
 
-const BASE = '/api/v1/applications';
+const BASE = "/api/v1/applications";
 
 export const onboardApplication = (payload) => axiosClient.post(BASE, payload).then((r) => r.data.data);
 export const updateApplication = (id, payload) => axiosClient.put(`${BASE}/${id}`, payload).then((r) => r.data.data);
@@ -12,8 +12,8 @@ export const deleteApplication = (id) => axiosClient.delete(`${BASE}/${id}`).the
 
 export const uploadApplicationSpec = (id, file) => {
   const form = new FormData();
-  form.append('file', file);
-  return axiosClient.post(`${BASE}/${id}/spec`, form, { headers: { 'Content-Type': 'multipart/form-data' } }).then((r) => r.data.data);
+  form.append("file", file);
+  return axiosClient.post(`${BASE}/${id}/spec`, form, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data.data);
 };
 export const fetchApplicationSpec = (id) => axiosClient.post(`${BASE}/${id}/fetch-spec`).then((r) => r.data.data);
 
@@ -23,3 +23,6 @@ export const diffSpecVersion = (id, versionId) => axiosClient.get(`${BASE}/${id}
 export const getSpecVersionImpact = (id, versionId) => axiosClient.get(`${BASE}/${id}/spec-versions/${versionId}/impact`).then((r) => r.data.data);
 export const approveSpecVersion = (id, versionId) => axiosClient.post(`${BASE}/${id}/spec-versions/${versionId}/approve`).then((r) => r.data.data);
 export const rejectSpecVersion = (id, versionId) => axiosClient.post(`${BASE}/${id}/spec-versions/${versionId}/reject`).then((r) => r.data.data);
+
+// Fetch available endpoints for an application
+export const fetchEndpoints = (id) => axiosClient.get(`${BASE}/${id}/fetch-endpoints`).then((r) => r.data.data);
