@@ -1,69 +1,51 @@
 import { useEffect, useState } from 'react';
 import { listApplications, fetchEndpoints } from '../../api/applicationApi';
 import { listScenariosByApplication } from '../../api/scenarioApi';
-import { listTestDataByApplication, createTestData, bulkUploadTestData, deleteTestData } from '../../api/testDataApi';
+import { listTestDataByApplication, updateTestData, deleteTestData } from '../../api/testDataApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
-
-const inputTypeFor = (type) => {
-  switch ((type || '').toLowerCase()) {
-    case 'integer':
-    case 'number':
-      return 'number';
-    case 'boolean':
-      return 'checkbox';
-    default:
-      return 'text';
-  }
-};
-
-/** The scenario's own endpoint (httpMethod + endpoint) is just a label - the fields come from
- * matching it against the application's parsed endpoints (SPEC_ENDPOINT cache via fetch-endpoints). */
-const findMatchingEndpoint = (scenario, endpoints) => {
-  if (!scenario) return null;
-  return endpoints.find((ep) => ep.httpMethod === scenario.httpMethod && ep.path === scenario.endpoint) || null;
-};
+import TestDataForm from './TestDataForm';
+import { parseFieldsJson, previewPairs, fieldCount, effectiveFieldEntries, effectiveGroupKey, headerKeys } from './testDataFields';
 
 export default function TestDataPage() {
-  const [applications, setProjects] = useState([]);
+  const [applications, setApplications] = useState([]);
   const [applicationId, setApplicationId] = useState('');
   const [records, setRecords] = useState([]);
-  const [recordName, setRecordName] = useState('');
-  const [file, setFile] = useState(null);
   const [error, setError] = useState(null);
 
-  // Test-data-against-a-scenario flow: pick a scenario for this application, its
-  // endpoint (and header/path fields, sourced from the SPEC_ENDPOINT cache via
-  // fetch-endpoints) is derived and rendered so values can be entered per field.
   const [scenarios, setScenarios] = useState([]);
   const [endpoints, setEndpoints] = useState([]);
-  const [selectedScenarioId, setSelectedScenarioId] = useState('');
-  const [headerValues, setHeaderValues] = useState({});
-  const [pathValues, setPathValues] = useState({});
-  const [requestBodyText, setRequestBodyText] = useState('');
-  const [bulkScenarioId, setBulkScenarioId] = useState('');
+
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [activeId, setActiveId] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+
+  const [editing, setEditing] = useState(false);
+  const [editValues, setEditValues] = useState({});
+  const [editStatus, setEditStatus] = useState('VALID');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     listApplications({ size: 100 }).then((page) => {
       const list = page.content || [];
-      setProjects(list);
+      setApplications(list);
       if (list.length && !applicationId) setApplicationId(String(list[0].id));
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const load = () => {
-    if (!applicationId) return;
-    listTestDataByApplication(applicationId, { size: 100 }).then((page) => setRecords(page.content || []));
+    if (!applicationId) { setRecords([]); return; }
+    listTestDataByApplication(applicationId, { size: 200 }).then((page) => setRecords(page.content || []));
   };
 
   useEffect(load, [applicationId]);
 
   useEffect(() => {
-    setSelectedScenarioId('');
-    setBulkScenarioId('');
-    setHeaderValues({});
-    setPathValues({});
-    setRequestBodyText('');
+    setSelectedIds([]);
+    setActiveId(null);
+    setEditing(false);
+    setShowForm(false);
     if (!applicationId) {
       setScenarios([]);
       setEndpoints([]);
@@ -78,198 +60,244 @@ export default function TestDataPage() {
       .catch(() => setEndpoints([]));
   }, [applicationId]);
 
-  const selectedScenario = scenarios.find((s) => String(s.id) === selectedScenarioId) || null;
-  const matchedEndpoint = findMatchingEndpoint(selectedScenario, endpoints);
-  const headerFields = (matchedEndpoint?.parameters || []).filter((p) => (p?.in || '').toLowerCase() === 'header');
-  const pathFields = (matchedEndpoint?.parameters || []).filter((p) => (p?.in || '').toLowerCase() === 'path');
-  const hasRequestBody = Boolean(matchedEndpoint?.requestBody && Object.keys(matchedEndpoint.requestBody).length > 0);
+  const applicationName = applications.find((a) => String(a.id) === String(applicationId))?.name;
+  const activeRecord = records.find((r) => r.id === activeId) || null;
+  const activeParsed = parseFieldsJson(activeRecord?.fieldsJson);
 
-  const handleScenarioChange = (id) => {
-    setSelectedScenarioId(id);
-    setHeaderValues({});
-    setPathValues({});
-    setRequestBodyText('');
+  const toggleSelect = (id) => setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const toggleSelectAll = (checked) => setSelectedIds(checked ? records.map((r) => r.id) : []);
+  const clearSelection = () => setSelectedIds([]);
+
+  const selectRow = (id) => { setEditing(false); setActiveId(id); };
+  const closePanel = () => { setActiveId(null); setEditing(false); };
+
+  const startEdit = (record) => {
+    const parsed = parseFieldsJson(record.fieldsJson);
+    setActiveId(record.id);
+    setEditStatus(record.status || 'VALID');
+    setEditValues(Object.fromEntries(effectiveFieldEntries(parsed)));
+    setEditing(true);
   };
 
-  const handleCreate = async (e) => {
-    e.preventDefault();
+  const openCreateForm = () => setShowForm(true);
+  const closeCreateForm = () => setShowForm(false);
+
+  const handleDeleteOne = async (id) => {
+    if (!confirm('Delete this test data record?')) return;
     setError(null);
-    if (!selectedScenario) {
-      setError('Select a test scenario first');
-      return;
-    }
     try {
-      let requestBodyValue;
-      if (hasRequestBody && requestBodyText.trim()) {
-        try {
-          requestBodyValue = JSON.parse(requestBodyText);
-        } catch {
-          setError('Request Body must be valid JSON');
-          return;
-        }
-      }
-      const fieldsJson = JSON.stringify({
-        headers: headerValues,
-        pathParams: pathValues,
-        ...(requestBodyValue !== undefined ? { requestBody: requestBodyValue } : {})
-      });
-      await createTestData({
+      await deleteTestData(id);
+      if (activeId === id) closePanel();
+      setSelectedIds((prev) => prev.filter((x) => x !== id));
+      load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Unable to delete test data record');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Delete ${selectedIds.length} record(s)?`)) return;
+    setError(null);
+    try {
+      for (const id of selectedIds) await deleteTestData(id);
+      setSelectedIds([]);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Unable to delete selected records');
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!activeRecord) return;
+    setError(null);
+    setSaving(true);
+    try {
+      const group = effectiveGroupKey(activeParsed) || 'requestBody';
+      const fieldsJson = JSON.stringify({ ...activeParsed, [group]: editValues });
+      await updateTestData(activeRecord.id, {
         applicationId: Number(applicationId),
-        scenarioId: selectedScenario.id,
-        recordName,
-        mode: 'MANUAL',
-        status: 'VALID',
+        scenarioId: activeRecord.scenarioId,
+        recordName: activeRecord.recordName,
+        mode: activeRecord.mode || 'MANUAL',
+        status: editStatus,
         fieldsJson
       });
-      setRecordName('');
+      setEditing(false);
       load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Unable to create test data record');
+      setError(err.response?.data?.message || 'Unable to save changes');
+    } finally {
+      setSaving(false);
     }
   };
-
-  const handleBulk = async (e) => {
-    e.preventDefault();
-    if (!file) return;
-    if (!bulkScenarioId) {
-      setError('Select a test scenario for this bulk upload first');
-      return;
-    }
-    setError(null);
-    try {
-      await bulkUploadTestData(applicationId, bulkScenarioId, file);
-      setFile(null);
-      load();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Bulk upload failed');
-    }
-  };
-
-  const handleDelete = async (id) => {
-    await deleteTestData(id);
-    load();
-  };
-
-  const renderFieldRows = (fields, values, setValues) => fields.map((f) => (
-    <div key={f.name} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-      <span style={{ minWidth: 150 }}>{f.name}{f.required ? ' *' : ''}</span>
-      <span className="tag" style={{ fontSize: 10 }}>{f.type || 'string'}</span>
-      {inputTypeFor(f.type) === 'checkbox' ? (
-        <input type="checkbox" checked={!!values[f.name]} onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.checked }))} />
-      ) : (
-        <input
-          type={inputTypeFor(f.type)}
-          style={{ flex: 1 }}
-          value={values[f.name] ?? ''}
-          onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
-        />
-      )}
-    </div>
-  ));
 
   return (
     <div>
-      <div className="card-hd"><span className="card-title">Test Data</span></div>
-
-      <div className="fld" style={{ maxWidth: 320, marginBottom: 14 }}>
-        <label>Application</label>
-        <select value={applicationId} onChange={(e) => setApplicationId(e.target.value)}>
-          {applications.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
+      <div className="card-hd">
+        <div>
+          <span className="card-title">Test Data</span>
+          <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 4 }}>Input parameters and records linked to test scenarios. Click a row to view details.</div>
+        </div>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+          <div className="fld" style={{ marginBottom: 0, minWidth: 200 }}>
+            <label>Application</label>
+            <select value={applicationId} onChange={(e) => setApplicationId(e.target.value)}>
+              {applications.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+          <span style={{ fontSize: 11, color: 'var(--text-dim)', letterSpacing: 1 }}>{records.length} RECORD{records.length === 1 ? '' : 'S'}</span>
+          <RoleGate roles={EDIT_ROLES}>
+            <button className="btn btn-primary" onClick={openCreateForm}>+ Add Test Data</button>
+          </RoleGate>
+        </div>
       </div>
 
       {error && <div className="readonly-banner">{error}</div>}
 
-      <RoleGate roles={EDIT_ROLES}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <form className="card" onSubmit={handleCreate}>
-            <div className="card-hd"><span className="card-title">Single Entry</span></div>
-            <div className="fld"><label>Record Name</label><input required value={recordName} onChange={(e) => setRecordName(e.target.value)} /></div>
+      {selectedIds.length > 0 && (
+        <div className="td-bulk-bar">
+          <span style={{ color: 'var(--purple)' }}>{selectedIds.length} selected</span>
+          <RoleGate roles={EDIT_ROLES}>
+            <button className="btn btn-red btn-sm" onClick={handleBulkDelete}>🗑 Delete Selected</button>
+          </RoleGate>
+          <button className="btn btn-ghost btn-sm" onClick={clearSelection}>✕ Clear</button>
+        </div>
+      )}
 
-            <div className="fld">
-              <label>Test Scenario</label>
-              <select value={selectedScenarioId} onChange={(e) => handleScenarioChange(e.target.value)} disabled={scenarios.length === 0}>
-                <option value="">{scenarios.length === 0 ? 'No scenarios for this application' : '— Select a scenario —'}</option>
-                {scenarios.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name} ({s.httpMethod} {s.endpoint})</option>
-                ))}
-              </select>
+      <div className="td-body">
+        {!showForm && (
+          <>
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              {records.length === 0 ? (
+                <div className="empty-state">No test data records yet for this application.</div>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 32 }}>
+                        <input type="checkbox" checked={selectedIds.length === records.length} onChange={(e) => toggleSelectAll(e.target.checked)} />
+                      </th>
+                      <th>Record Name</th>
+                      <th>Service</th>
+                      <th>Feature</th>
+                      <th>Key Input Params</th>
+                      <th>Fields</th>
+                      <th>Status</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {records.map((r) => {
+                      const parsed = parseFieldsJson(r.fieldsJson);
+                      const preview = previewPairs(parsed).map(([k, v]) => `${k}: ${v}`).join(', ');
+                      return (
+                        <tr
+                          key={r.id}
+                          className={`td-row ${activeId === r.id ? 'active' : ''}`}
+                          onClick={() => selectRow(r.id)}
+                        >
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <input type="checkbox" checked={selectedIds.includes(r.id)} onChange={() => toggleSelect(r.id)} />
+                          </td>
+                          <td>{r.recordName}</td>
+                          <td>{applicationName || '—'}</td>
+                          <td>{r.scenarioName || '—'}</td>
+                          <td className="td-preview-cell">{preview || '—'}</td>
+                          <td>{fieldCount(parsed)}</td>
+                          <td><span className={`tag ${r.status === 'VALID' ? 'tag-g' : 'tag-r'}`}>{r.status === 'VALID' ? 'Valid' : 'Invalid'}</span></td>
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <RoleGate roles={EDIT_ROLES}>
+                              <button type="button" className="td-ic-btn edit" onClick={() => startEdit(r)}>✎</button>
+                              <button type="button" className="td-ic-btn del" onClick={() => handleDeleteOne(r.id)}>🗑</button>
+                            </RoleGate>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
 
-            {selectedScenario && (
-              <>
-                <div className="fld">
-                  <label>Endpoint</label>
-                  <input readOnly value={`${selectedScenario.httpMethod} ${selectedScenario.endpoint}`} style={{ background: 'var(--bg-secondary)' }} />
+            {activeRecord && (
+              <div className="card td-detail-panel">
+                <div className="td-detail-hd">
+                  <span className="td-detail-title">{activeRecord.recordName}{activeRecord.scenarioName ? ` — ${activeRecord.scenarioName}` : ''}</span>
+                  <RoleGate roles={EDIT_ROLES}>
+                    {!editing && <button className="btn btn-ghost btn-sm" onClick={() => startEdit(activeRecord)}>✎ Edit</button>}
+                  </RoleGate>
+                  <button className="btn btn-ghost btn-sm" onClick={closePanel}>✕ Close</button>
                 </div>
 
-                {headerFields.length > 0 && (
-                  <div className="fld">
-                    <label>Header Fields</label>
-                    {renderFieldRows(headerFields, headerValues, setHeaderValues)}
+                <div className="td-detail-meta">
+                  <span className="td-breadcrumb">{applicationName || '—'} → {activeRecord.scenarioName || '—'}</span>
+                  <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    {headerKeys(activeParsed).length > 0 && (
+                      <span className="tag">Headers: {headerKeys(activeParsed).join(', ')}</span>
+                    )}
+                    <span className={`tag ${(editing ? editStatus : activeRecord.status) === 'VALID' ? 'tag-g' : 'tag-r'}`}>
+                      {(editing ? editStatus : activeRecord.status) === 'VALID' ? 'Valid' : 'Invalid'}
+                    </span>
+                  </span>
+                </div>
+
+                {editing && (
+                  <div className="fld" style={{ maxWidth: 220, margin: '0 0 12px' }}>
+                    <label>Status</label>
+                    <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)}>
+                      <option value="VALID">Valid</option>
+                      <option value="INVALID">Invalid</option>
+                    </select>
                   </div>
                 )}
 
-                {pathFields.length > 0 && (
-                  <div className="fld">
-                    <label>Path Fields</label>
-                    {renderFieldRows(pathFields, pathValues, setPathValues)}
-                  </div>
-                )}
+                <div className="td-field-grid">
+                  {editing ? (
+                    Object.keys(editValues).length === 0 ? (
+                      <div className="empty-state">No fields to edit for this record.</div>
+                    ) : Object.entries(editValues).map(([key, value]) => (
+                      <div className="td-field-card" key={key}>
+                        <div className="td-field-label">{key}</div>
+                        <input value={value ?? ''} onChange={(e) => setEditValues((v) => ({ ...v, [key]: e.target.value }))} />
+                      </div>
+                    ))
+                  ) : (
+                    effectiveFieldEntries(activeParsed).length === 0 ? (
+                      <div className="empty-state">No parsed fields for this record.</div>
+                    ) : effectiveFieldEntries(activeParsed).map(([key, value]) => (
+                      <div className="td-field-card" key={key}>
+                        <div className="td-field-label">{key}</div>
+                        <div className="td-field-value">{value === '' || value === null || value === undefined ? <span style={{ color: 'var(--text-dim)' }}>(empty)</span> : String(value)}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
 
-                {hasRequestBody && (
-                  <div className="fld">
-                    <label>Request Body</label>
-                    <textarea rows={4} value={requestBodyText} onChange={(e) => setRequestBodyText(e.target.value)} placeholder="{}" />
-                  </div>
-                )}
-              </>
-            )}
-
-            <div className="form-ft"><button className="btn btn-primary" type="submit">Add Record</button></div>
-          </form>
-
-          <form className="card" onSubmit={handleBulk}>
-            <div className="card-hd"><span className="card-title">Bulk Upload (CSV)</span></div>
-            <div className="fld">
-              <label>Test Scenario</label>
-              <select value={bulkScenarioId} onChange={(e) => setBulkScenarioId(e.target.value)} disabled={scenarios.length === 0}>
-                <option value="">{scenarios.length === 0 ? 'No scenarios for this application' : '— Select a scenario —'}</option>
-                {scenarios.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name} ({s.httpMethod} {s.endpoint})</option>
-                ))}
-              </select>
-            </div>
-            <div className="fld"><label>CSV File</label><input type="file" accept=".csv" onChange={(e) => setFile(e.target.files?.[0] || null)} /></div>
-            <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>First row = column headers, one record per subsequent row - every row is created against the scenario selected above.</div>
-            <div className="form-ft"><button className="btn btn-primary" type="submit">Upload</button></div>
-          </form>
-        </div>
-      </RoleGate>
-
-      <div className="card">
-        {records.length === 0 ? (
-          <div className="empty-state">No test data records yet.</div>
-        ) : (
-          <table>
-            <thead><tr><th>Name</th><th>Scenario</th><th>Mode</th><th>Status</th><th>Fields</th><th></th></tr></thead>
-            <tbody>
-              {records.map((r) => (
-                <tr key={r.id}>
-                  <td>{r.recordName}</td>
-                  <td>{r.scenarioName || '—'}</td>
-                  <td><span className="tag tag-p">{r.mode}</span></td>
-                  <td><span className={`tag ${r.status === 'VALID' ? 'tag-g' : 'tag-r'}`}>{r.status}</span></td>
-                  <td style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.fieldsJson}</td>
-                  <td>
+                {editing && (
+                  <div className="form-ft" style={{ justifyContent: 'space-between' }}>
                     <RoleGate roles={EDIT_ROLES}>
-                      <button className="btn btn-red btn-sm" onClick={() => handleDelete(r.id)}>Delete</button>
+                      <button className="btn btn-red btn-sm" onClick={() => handleDeleteOne(activeRecord.id)}>🗑 Delete</button>
                     </RoleGate>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setEditing(false)}>Cancel</button>
+                      <button className="btn btn-primary btn-sm" disabled={saving} onClick={handleSaveEdit}>{saving ? 'Saving…' : 'Save Changes'}</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
+        {showForm && (
+          <TestDataForm
+            applicationId={applicationId}
+            applications={applications}
+            scenarios={scenarios}
+            endpoints={endpoints}
+            onSaved={(shouldClose) => { load(); if (shouldClose) closeCreateForm(); }}
+            onClose={closeCreateForm}
+          />
         )}
       </div>
     </div>
