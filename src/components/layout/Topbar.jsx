@@ -1,4 +1,5 @@
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const TITLES = {
@@ -16,6 +17,7 @@ const TITLES = {
 
 export default function Topbar() {
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -33,6 +35,9 @@ export default function Topbar() {
       {crumb && <span className="topbar-crumb">/ {crumb}</span>}
       <div className="topbar-right">
         <span className="role-badge">{user?.username} · {user?.role}</span>
+        <button className="btn btn-ghost btn-sm" onClick={toggleTheme}>
+          {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+        </button>
         <button className="btn btn-ghost btn-sm" onClick={handleLogout}>Logout</button>
       </div>
     </div>

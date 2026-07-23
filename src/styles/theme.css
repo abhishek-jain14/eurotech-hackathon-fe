@@ -16,6 +16,23 @@
   --amber-rgb: 245, 185, 66;
 }
 
+:root[data-theme='light'] {
+  --bg: #f4f7fb;
+  --surface: #ffffff;
+  --surface-2: #eef2f8;
+  --border: #d7deea;
+  --border-2: #c7d0e1;
+  --text: #142033;
+  --text-muted: #4e5768;
+  --text-dim: #73809a;
+  --accent: #1e9568;
+  --accent-rgb: 30, 149, 104;
+  --purple: #6d4ed6;
+  --purple-rgb: 109, 78, 214;
+  --red: #cf3e4b;
+  --amber: #b67b00;
+}
+
 * { box-sizing: border-box; }
 
 body {
@@ -24,6 +41,32 @@ body {
   color: var(--text);
   font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
   font-size: 13px;
+  transition: background 0.25s ease, color 0.25s ease;
+}
+
+.route-transition {
+  animation: route-fade 0.22s ease;
+}
+
+.route-transition.fade-out {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.route-transition.fade-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@keyframes route-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 a { color: inherit; }
