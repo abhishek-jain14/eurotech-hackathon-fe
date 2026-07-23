@@ -5,6 +5,7 @@ import { listScenariosByApplication } from '../../api/scenarioApi';
 import { triggerExecution, listExecutionsByApplication } from '../../api/executionApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
+import { normalizeListResponse } from '../../utils/normalizeListResponse';
 
 export default function ExecutionPage() {
   const [applications, setApplications] = useState([]);
@@ -18,11 +19,11 @@ export default function ExecutionPage() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    listApplications({ size: 100 }).then((page) => {
-      const list = page.content || [];
+    listApplications({ size: 100 }).then((payload) => {
+      const list = normalizeListResponse(payload);
       setApplications(list);
       if (list.length) setApplicationId(String(list[0].id));
-    });
+    }).catch(() => setApplications([]));
   }, []);
 
   const selectedApp = applications.find((a) => String(a.id) === applicationId);
@@ -34,11 +35,13 @@ export default function ExecutionPage() {
       setEnvironments(envs);
       if (envs.length) setEnvironmentId(String(envs[0].id));
     });
-    listScenariosByApplication(applicationId, { size: 100 }).then((page) => setScenarios(page.content || []));
-    listExecutionsByApplication(applicationId, { size: 20 }).then((page) => setRuns(page.content || []));
+    listScenariosByApplication(applicationId, { size: 100 }).then((payload) => setScenarios(normalizeListResponse(payload))).catch(() => setScenarios([]));
+    listExecutionsByApplication(applicationId, { size: 20 }).then((payload) => setRuns(normalizeListResponse(payload))).catch(() => setRuns([]));
   };
 
-  useEffect(load, [applicationId, selectedApp?.projectId]);
+  useEffect(() => {
+    load();
+  }, [applicationId, selectedApp?.projectId]);
 
   const toggleScenario = (id) => {
     setSelectedScenarioIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));

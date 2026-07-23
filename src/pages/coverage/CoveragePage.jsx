@@ -22,7 +22,9 @@ export default function CoveragePage() {
       .catch(() => setError('Unable to load coverage. Is the backend running?'));
   };
 
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const toggleAppDetail = async (appId) => {
     if (expandedAppId === appId) {

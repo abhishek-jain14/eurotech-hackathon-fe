@@ -7,6 +7,7 @@ import ExecutionHistoryChart from '../../components/reports/ExecutionHistoryChar
 import PassFailDonut from '../../components/reports/PassFailDonut';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
+import { normalizeListResponse } from '../../utils/normalizeListResponse';
 
 const SIGNOFF_TAG = { PENDING: 'tag', APPROVED: 'tag-g', REJECTED: 'tag-r' };
 const SIGNOFF_LABEL = { PENDING: 'Pending', APPROVED: '✓ Approved', REJECTED: '✗ Rejected' };
@@ -61,11 +62,11 @@ export default function ReportsPage() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    listApplications({ size: 100 }).then((page) => {
-      const list = page.content || [];
+    listApplications({ size: 100 }).then((payload) => {
+      const list = normalizeListResponse(payload);
       setApplications(list);
       if (list.length && !applicationId) setApplicationId(String(list[0].id));
-    });
+    }).catch(() => setApplications([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -79,7 +80,7 @@ export default function ReportsPage() {
     if (!applicationId) return;
     setError(null);
     getApplicationReportDetail(applicationId).then(setDetail).catch(() => setError('Unable to load report. Is the backend running?'));
-    listExecutionsByApplication(applicationId, { size: 100 }).then((page) => setRuns(page.content || []));
+    listExecutionsByApplication(applicationId, { size: 100 }).then((payload) => setRuns(normalizeListResponse(payload))).catch(() => setRuns([]));
   }, [applicationId]);
 
   const handleSignoff = async (appId, action) => {

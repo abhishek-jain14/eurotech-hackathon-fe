@@ -20,7 +20,9 @@ export default function EnvironmentListPage() {
     listEnvironmentsByProject(projectId).then(setEnvironments).catch(() => setError('Unable to load environments.'));
   };
 
-  useEffect(load, [projectId]);
+  useEffect(() => {
+    load();
+  }, [projectId]);
 
   const update = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 

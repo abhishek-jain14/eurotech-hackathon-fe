@@ -6,6 +6,7 @@ import {
 } from '../../api/applicationApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES, ROLES } from '../../constants/roles';
+import { normalizeListResponse } from '../../utils/normalizeListResponse';
 
 export default function ApplicationListPage() {
   const [applications, setApplications] = useState([]);
@@ -16,12 +17,14 @@ export default function ApplicationListPage() {
   const load = () => {
     setLoading(true);
     listApplications({ page: 0, size: 50 })
-      .then((page) => setApplications(page.content || []))
+      .then((payload) => setApplications(normalizeListResponse(payload)))
       .catch(() => setError('Unable to load applications. Is the backend running?'))
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const handleDelete = async (id) => {
     if (!confirm('Permanently delete this application?')) return;

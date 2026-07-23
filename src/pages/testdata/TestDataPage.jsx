@@ -4,6 +4,7 @@ import { listScenariosByApplication } from '../../api/scenarioApi';
 import { listTestDataByApplication, updateTestData, deleteTestData } from '../../api/testDataApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
+import { normalizeListResponse } from '../../utils/normalizeListResponse';
 import TestDataForm from './TestDataForm';
 import { parseFieldsJson, previewPairs, fieldCount, effectiveFieldEntries, effectiveGroupKey, headerKeys } from './testDataFields';
 
@@ -27,7 +28,7 @@ export default function TestDataPage() {
 
   useEffect(() => {
     listApplications({ size: 100 }).then((page) => {
-      const list = page.content || [];
+      const list = normalizeListResponse(page);
       setApplications(list);
       if (list.length && !applicationId) setApplicationId(String(list[0].id));
     });
@@ -36,10 +37,12 @@ export default function TestDataPage() {
 
   const load = () => {
     if (!applicationId) { setRecords([]); return; }
-    listTestDataByApplication(applicationId, { size: 200 }).then((page) => setRecords(page.content || []));
+    listTestDataByApplication(applicationId, { size: 200 }).then((payload) => setRecords(normalizeListResponse(payload))).catch(() => setRecords([]));
   };
 
-  useEffect(load, [applicationId]);
+  useEffect(() => {
+    load();
+  }, [applicationId]);
 
   useEffect(() => {
     setSelectedIds([]);
@@ -51,7 +54,7 @@ export default function TestDataPage() {
       setEndpoints([]);
       return;
     }
-    listScenariosByApplication(applicationId, { size: 200 }).then((page) => setScenarios(page.content || [])).catch(() => setScenarios([]));
+    listScenariosByApplication(applicationId, { size: 200 }).then((payload) => setScenarios(normalizeListResponse(payload))).catch(() => setScenarios([]));
     fetchEndpoints(applicationId)
       .then((data) => {
         const list = Array.isArray(data?.content) ? data.content : Array.isArray(data) ? data : [];

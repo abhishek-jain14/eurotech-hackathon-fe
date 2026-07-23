@@ -6,6 +6,7 @@ import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
 import ScenarioForm from './ScenarioForm';
 import { buildGherkinLines } from './gherkinPreview';
+import { normalizeListResponse } from '../../utils/normalizeListResponse';
 
 const FILTERS = [
   { key: 'all', label: 'All' },
@@ -151,25 +152,25 @@ export default function ScenarioListPage() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    listApplications({ size: 100 }).then((page) => {
-      const list = page.content || [];
+    listApplications({ size: 100 }).then((payload) => {
+      const list = normalizeListResponse(payload);
       setApplications(list);
       if (list.length && !applicationId) setApplicationId(String(list[0].id));
-    });
+    }).catch(() => setApplications([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const load = (focusId) => {
     if (!applicationId) { setScenarios([]); return; }
-    listScenariosByApplication(applicationId, { size: 100 }).then((page) => {
-      const list = page.content || [];
+    listScenariosByApplication(applicationId, { size: 100 }).then((payload) => {
+      const list = normalizeListResponse(payload);
       setScenarios(list);
       if (focusId != null && list.some((s) => s.id === focusId)) {
         setActiveId(focusId);
       } else {
         setActiveId((cur) => (cur && list.some((s) => s.id === cur) ? cur : (list[0]?.id ?? null)));
       }
-    });
+    }).catch(() => setScenarios([]));
   };
 
   useEffect(() => load(), [applicationId]);
