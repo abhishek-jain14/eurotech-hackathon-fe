@@ -7,6 +7,7 @@ import ExecutionHistoryChart from '../../components/reports/ExecutionHistoryChar
 import PassFailDonut from '../../components/reports/PassFailDonut';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
+import { normalizeListResponse } from '../../utils/normalizeListResponse';
 
 const SIGNOFF_TAG = { PENDING: 'tag', APPROVED: 'tag-g', REJECTED: 'tag-r' };
 const SIGNOFF_LABEL = { PENDING: 'Pending', APPROVED: '✓ Approved', REJECTED: '✗ Rejected' };
@@ -61,11 +62,11 @@ export default function ReportsPage() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    listApplications({ size: 100 }).then((page) => {
-      const list = page.content || [];
+    listApplications({ size: 100 }).then((payload) => {
+      const list = normalizeListResponse(payload);
       setApplications(list);
       if (list.length && !applicationId) setApplicationId(String(list[0].id));
-    });
+    }).catch(() => setApplications([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -79,7 +80,7 @@ export default function ReportsPage() {
     if (!applicationId) return;
     setError(null);
     getApplicationReportDetail(applicationId).then(setDetail).catch(() => setError('Unable to load report. Is the backend running?'));
-    listExecutionsByApplication(applicationId, { size: 100 }).then((page) => setRuns(page.content || []));
+    listExecutionsByApplication(applicationId, { size: 100 }).then((payload) => setRuns(normalizeListResponse(payload))).catch(() => setRuns([]));
   }, [applicationId]);
 
   const handleSignoff = async (appId, action) => {
@@ -115,36 +116,48 @@ export default function ReportsPage() {
       {error && <div className="readonly-banner">{error}</div>}
 
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(7, 1fr)' }}>
-        <div className="stat-card">
-          <div className="stat-lbl">Pass Rate</div>
-          <div className="stat-val" style={{ color: 'var(--accent)' }}>{detail?.latestRun ? `${detail.latestRun.passRatePercent.toFixed(1)}%` : '—'}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-lbl">Total Tests</div>
-          <div className="stat-val">{detail?.latestRun?.totalTests ?? '—'}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-lbl">Passed</div>
-          <div className="stat-val" style={{ color: 'var(--accent)' }}>{detail?.latestRun?.passedCount ?? '—'}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-lbl">Failed</div>
-          <div className="stat-val" style={{ color: 'var(--red)' }}>{detail?.latestRun?.failedCount ?? '—'}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-lbl">Flaky</div>
-          <div className="stat-val" style={{ color: 'var(--amber)' }}>{detail?.flakyScenarios?.length ?? '—'}</div>
-        </div>
-        <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/coverage')} title="View in Coverage">
-          <div className="stat-lbl">Uncovered</div>
-          <div className="stat-val" style={{ color: 'var(--red)' }}>{detail?.uncoveredEndpoints ?? '—'}</div>
-          <div className="stat-delta">endpoints · view →</div>
-        </div>
-        <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/coverage')} title="View in Coverage">
-          <div className="stat-lbl">Partial</div>
-          <div className="stat-val" style={{ color: 'var(--amber)' }}>{detail?.partialEndpoints ?? '—'}</div>
-          <div className="stat-delta">endpoints · view →</div>
-        </div>
+        {!detail ? (
+          Array.from({ length: 7 }).map((_, index) => (
+            <div key={index} className="stat-card">
+              <div className="skeleton-line" style={{ width: '52%', marginBottom: 10 }} />
+              <div className="skeleton-block" style={{ height: 24, marginBottom: 8 }} />
+              <div className="skeleton-line" style={{ width: '60%' }} />
+            </div>
+          ))
+        ) : (
+          <>
+            <div className="stat-card">
+              <div className="stat-lbl">Pass Rate</div>
+              <div className="stat-val" style={{ color: 'var(--accent)' }}>{detail?.latestRun ? `${detail.latestRun.passRatePercent.toFixed(1)}%` : '—'}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-lbl">Total Tests</div>
+              <div className="stat-val">{detail?.latestRun?.totalTests ?? '—'}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-lbl">Passed</div>
+              <div className="stat-val" style={{ color: 'var(--accent)' }}>{detail?.latestRun?.passedCount ?? '—'}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-lbl">Failed</div>
+              <div className="stat-val" style={{ color: 'var(--red)' }}>{detail?.latestRun?.failedCount ?? '—'}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-lbl">Flaky</div>
+              <div className="stat-val" style={{ color: 'var(--amber)' }}>{detail?.flakyScenarios?.length ?? '—'}</div>
+            </div>
+            <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/coverage')} title="View in Coverage">
+              <div className="stat-lbl">Uncovered</div>
+              <div className="stat-val" style={{ color: 'var(--red)' }}>{detail?.uncoveredEndpoints ?? '—'}</div>
+              <div className="stat-delta">endpoints · view →</div>
+            </div>
+            <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/coverage')} title="View in Coverage">
+              <div className="stat-lbl">Partial</div>
+              <div className="stat-val" style={{ color: 'var(--amber)' }}>{detail?.partialEndpoints ?? '—'}</div>
+              <div className="stat-delta">endpoints · view →</div>
+            </div>
+          </>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>

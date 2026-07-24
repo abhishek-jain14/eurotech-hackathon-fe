@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
 import { listApplications, fetchEndpoints } from '../../api/applicationApi';
 import { listScenariosByApplication } from '../../api/scenarioApi';
 import { listTestDataByApplication, updateTestData, deleteTestData } from '../../api/testDataApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
+import { normalizeListResponse } from '../../utils/normalizeListResponse';
 import TestDataForm from './TestDataForm';
 import { parseFieldsJson, previewPairs, fieldCount, effectiveFieldEntries, effectiveGroupKey, headerKeys } from './testDataFields';
 
@@ -35,7 +35,7 @@ export default function TestDataPage() {
 
   useEffect(() => {
     listApplications({ size: 100 }).then((page) => {
-      const list = page.content || [];
+      const list = normalizeListResponse(page);
       setApplications(list);
       if (deepLinkApplicationId) {
         setApplicationId(deepLinkApplicationId);
@@ -51,7 +51,9 @@ export default function TestDataPage() {
     listTestDataByApplication(applicationId, { size: 200 }).then((page) => setRecords(page.content || []));
   };
 
-  useEffect(load, [applicationId]);
+  useEffect(() => {
+    load();
+  }, [applicationId]);
 
   useEffect(() => {
     setSelectedIds([]);

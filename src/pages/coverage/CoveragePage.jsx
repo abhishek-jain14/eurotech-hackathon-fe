@@ -24,7 +24,9 @@ export default function CoveragePage() {
       .catch(() => setError('Unable to load coverage. Is the backend running?'));
   };
 
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const toggleAppDetail = async (appId) => {
     if (expandedAppId === appId) {
@@ -88,7 +90,12 @@ export default function CoveragePage() {
           <span className="card-title">Application Coverage</span>
         </div>
         {!overview ? (
-          <div className="empty-state">Loading…</div>
+          <div style={{ padding: 20 }}>
+            <div className="skeleton-line" style={{ width: '28%', marginBottom: 12 }} />
+            <div className="skeleton-block" style={{ height: 34, marginBottom: 8 }} />
+            <div className="skeleton-block" style={{ height: 34, marginBottom: 8 }} />
+            <div className="skeleton-block" style={{ height: 34 }} />
+          </div>
         ) : overview.applications.length === 0 ? (
           <div className="empty-state">No applications onboarded yet.</div>
         ) : (
@@ -140,7 +147,11 @@ export default function CoveragePage() {
                             {app.applicationName} — Endpoint Breakdown
                           </div>
                           {loadingAppId === app.applicationId ? (
-                            <div className="empty-state">Loading…</div>
+                            <div style={{ padding: '12px 0' }}>
+                              <div className="skeleton-line" style={{ width: '42%' }} />
+                              <div className="skeleton-block" style={{ height: 24, marginTop: 10 }} />
+                              <div className="skeleton-block" style={{ height: 24 }} />
+                            </div>
                           ) : (endpointsByApp[app.applicationId] || []).length === 0 ? (
                             <div className="empty-state">No endpoints found for this application's current spec.</div>
                           ) : (

@@ -75,7 +75,15 @@ export default function ApplicationOnboardPage() {
   };
 
   if (loading) {
-    return <div className="card"><div className="empty-state">Loading…</div></div>;
+    return (
+      <div className="card" style={{ maxWidth: 620 }}>
+        <div className="skeleton-line" style={{ width: '48%', marginBottom: 12 }} />
+        <div className="skeleton-block" style={{ height: 42, marginBottom: 12 }} />
+        <div className="skeleton-block" style={{ height: 42, marginBottom: 12 }} />
+        <div className="skeleton-block" style={{ height: 42, marginBottom: 12 }} />
+        <div className="skeleton-line" style={{ width: '30%' }} />
+      </div>
+    );
   }
 
   if (createdApp) {

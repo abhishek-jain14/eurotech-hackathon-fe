@@ -120,7 +120,14 @@ export default function ApplicationSpecsPage() {
     }
   };
 
-  if (loading) return <div className="card"><div className="empty-state">Loading…</div></div>;
+  if (loading) return (
+    <div className="card" style={{ maxWidth: 720 }}>
+      <div className="skeleton-line" style={{ width: '45%', marginBottom: 16 }} />
+      <div className="skeleton-block" style={{ height: 26, marginBottom: 10 }} />
+      <div className="skeleton-block" style={{ height: 26, marginBottom: 10 }} />
+      <div className="skeleton-line" style={{ width: '28%', marginTop: 12 }} />
+    </div>
+  );
 
   return (
     <div className="card" style={{ maxWidth: 720 }}>

@@ -3,6 +3,7 @@ import { listApplications, rejectSpecVersion } from '../../api/applicationApi';
 import { analyzeApplication, listPendingVersions, getPendingImpact, healVersion } from '../../api/changeTrackerApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
+import { normalizeListResponse } from '../../utils/normalizeListResponse';
 
 export default function ChangeTrackerPage() {
   const [applications, setApplications] = useState([]);
@@ -14,7 +15,7 @@ export default function ChangeTrackerPage() {
 
   useEffect(() => {
     listApplications({ size: 100 }).then((page) => {
-      const list = page.content || [];
+      const list = normalizeListResponse(page);
       setApplications(list);
       if (list.length) setApplicationId(String(list[0].id));
     });

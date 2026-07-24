@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { listUsers, createUser, deactivateUser, deleteUser } from '../../api/userApi';
+import { normalizeListResponse } from '../../utils/normalizeListResponse';
 
 const EMPTY_FORM = { username: '', password: '', fullName: '', email: '', role: 'TESTER' };
 
@@ -8,9 +9,11 @@ export default function UsersPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState(null);
 
-  const load = () => listUsers({ size: 100 }).then((page) => setUsers(page.content || []));
+  const load = () => listUsers({ size: 100 }).then((payload) => setUsers(normalizeListResponse(payload))).catch(() => setUsers([]));
 
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const update = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 

@@ -4,6 +4,7 @@ import { listScenariosByApplication } from '../../api/scenarioApi';
 import { listTestFlowsByApplication, createTestFlow, deleteTestFlow } from '../../api/testFlowApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
+import { normalizeListResponse } from '../../utils/normalizeListResponse';
 
 export default function TestFlowsPage() {
   const [applications, setProjects] = useState([]);
@@ -16,7 +17,7 @@ export default function TestFlowsPage() {
 
   useEffect(() => {
     listApplications({ size: 100 }).then((page) => {
-      const list = page.content || [];
+      const list = normalizeListResponse(page);
       setProjects(list);
       if (list.length && !applicationId) setApplicationId(String(list[0].id));
     });
@@ -24,11 +25,13 @@ export default function TestFlowsPage() {
 
   const load = () => {
     if (!applicationId) return;
-    listScenariosByApplication(applicationId, { size: 100 }).then((page) => setScenarios(page.content || []));
+    listScenariosByApplication(applicationId, { size: 100 }).then((payload) => setScenarios(normalizeListResponse(payload))).catch(() => setScenarios([]));
     listTestFlowsByApplication(applicationId).then(setFlows);
   };
 
-  useEffect(load, [applicationId]);
+  useEffect(() => {
+    load();
+  }, [applicationId]);
 
   const toggleScenario = (id) => {
     setSelectedScenarioIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));

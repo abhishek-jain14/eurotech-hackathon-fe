@@ -6,6 +6,7 @@ import {
 } from '../../api/applicationApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES, ROLES } from '../../constants/roles';
+import { normalizeListResponse } from '../../utils/normalizeListResponse';
 
 export default function ApplicationListPage() {
   const [applications, setApplications] = useState([]);
@@ -16,12 +17,14 @@ export default function ApplicationListPage() {
   const load = () => {
     setLoading(true);
     listApplications({ page: 0, size: 50 })
-      .then((page) => setApplications(page.content || []))
+      .then((payload) => setApplications(normalizeListResponse(payload)))
       .catch(() => setError('Unable to load applications. Is the backend running?'))
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const handleDelete = async (id) => {
     if (!confirm('Permanently delete this application?')) return;
@@ -61,7 +64,13 @@ export default function ApplicationListPage() {
 
       <div className="card">
         {loading ? (
-          <div className="empty-state">Loading…</div>
+          <div>
+            <div className="skeleton-line" style={{ width: '38%', marginBottom: 12 }} />
+            <div className="skeleton-block" />
+            <div className="skeleton-line" style={{ width: '92%' }} />
+            <div className="skeleton-line" style={{ width: '86%' }} />
+            <div className="skeleton-line" style={{ width: '76%' }} />
+          </div>
         ) : applications.length === 0 ? (
           <div className="empty-state">No applications onboarded yet. Create a Project first, then onboard an application under it.</div>
         ) : (
