@@ -287,7 +287,7 @@ export default function ScenarioForm({ applicationId, applicationName, projectId
     }
   };
 
-  const title = isEdit ? 'Edit Scenario' : mode === 'ai' ? 'Generate with AI' : mode === 'manual' ? 'Add Scenario — Manual Entry' : mode === 'jira' ? 'Add Scenario — From Jira' : 'Add Scenario';
+  const title = isEdit ? 'Edit Scenario' : mode === 'ai' ? 'Generate with AI' : mode === 'manual' ? 'Add Scenario — Custom Entry' : mode === 'jira' ? 'Add Scenario — From Jira' : 'Add Scenario';
   const selectedEndpointIndex = endpoints.findIndex((ep) => (ep.httpMethod || 'GET') === form.httpMethod && (ep.path || ep.endpoint) === form.endpoint);
 
   return (
@@ -314,17 +314,17 @@ export default function ScenarioForm({ applicationId, applicationName, projectId
 
         {!isEdit && mode === null && (
           <div className="sc-mode-picker">
-            <div className="sc-mode-card" onClick={() => pickMode('manual')}>
-              <div className="sc-mode-icon">✏️</div>
-              <div className="sc-mode-title">Manual Entry</div>
-              <div className="sc-mode-desc">Define endpoint, type, steps and expected results yourself with full control.</div>
-              <span className="sc-mode-badge manual">Manual</span>
-            </div>
             <div className="sc-mode-card" onClick={() => pickMode('ai')}>
               <div className="sc-mode-icon">✦</div>
               <div className="sc-mode-title">Generate with AI</div>
               <div className="sc-mode-desc">Generate scenarios from this application's current approved spec version.</div>
               <span className="sc-mode-badge ai">AI Powered</span>
+            </div>
+            <div className="sc-mode-card" onClick={() => pickMode('manual')}>
+              <div className="sc-mode-icon">✏️</div>
+              <div className="sc-mode-title">Custom Entry</div>
+              <div className="sc-mode-desc">Define endpoint, type, steps and expected results yourself with full control.</div>
+              <span className="sc-mode-badge manual">Custom Entry</span>
             </div>
             <div className="sc-mode-card" onClick={() => pickMode('jira')}>
               <div className="sc-mode-icon">◉</div>
@@ -344,7 +344,7 @@ export default function ScenarioForm({ applicationId, applicationName, projectId
             {!versionsLoading && currentVersion && (
               <>
                 <div className="fld">
-                  <label>AI Prompt <span style={{ color: 'var(--red)' }}>*</span></label>
+                  <label>Generate with AI <span style={{ color: 'var(--red)' }}>*</span></label>
                   <textarea
                     rows={4}
                     value={genPrompt}
@@ -369,7 +369,7 @@ export default function ScenarioForm({ applicationId, applicationName, projectId
 
         {(mode === 'manual' || mode === 'jira') && (
           <form id="sc-manual-form" onSubmit={handleSubmit}>
-            <div style={{ fontSize: 13, fontWeight: 'bold', marginBottom: 14 }}>{mode === 'jira' ? 'Import from Jira' : 'Manual Entry'}</div>
+            <div style={{ fontSize: 13, fontWeight: 'bold', marginBottom: 14 }}>{mode === 'jira' ? 'Import from Jira' : 'Custom Entry'}</div>
 
             {mode === 'jira' && (
               <div className="fld" style={{ marginBottom: 14 }}>

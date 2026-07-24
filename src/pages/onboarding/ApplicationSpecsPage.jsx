@@ -181,6 +181,7 @@ export default function ApplicationSpecsPage({ id: idProp, onBack }) {
                     {v.status === 'CURRENT' && (
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                         <select
+                          className="spec-generate-select"
                           value={genType[v.id] || GENERATION_OPTIONS[0].value}
                           onChange={(e) => setGenType((s) => ({ ...s, [v.id]: e.target.value }))}
                         >

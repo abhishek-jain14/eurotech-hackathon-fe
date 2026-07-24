@@ -94,7 +94,7 @@ function AiPromptPanel({ applications, endpoints, scenarios }) {
     <div>
       <div className="td-ai-card">
         <div className="td-ai-card-hd">
-          <span>✦ Generate via AI Prompt</span>
+          <span>✦ Generate with AI</span>
           <span className="td-ai-pill">Claude</span>
         </div>
         <div className="td-ai-card-body">
@@ -343,11 +343,11 @@ export default function TestDataForm({ applicationId, applications = [], scenari
       <div className="td-tabs">
         <button type="button" className={`td-tab ${mode === 'ai' ? 'active' : ''}`} onClick={() => setMode('ai')}>
           <div className="td-tab-icon">✦</div>
-          <div className="td-tab-label">AI Prompt</div>
+          <div className="td-tab-label">Generate with AI</div>
         </button>
         <button type="button" className={`td-tab ${mode === 'manual' ? 'active' : ''}`} onClick={() => setMode('manual')}>
           <div className="td-tab-icon">✏️</div>
-          <div className="td-tab-label">Single Entry</div>
+          <div className="td-tab-label">Custom Entry</div>
         </button>
         <button type="button" className={`td-tab ${mode === 'bulk' ? 'active' : ''}`} onClick={() => setMode('bulk')}>
           <div className="td-tab-icon">⬆</div>

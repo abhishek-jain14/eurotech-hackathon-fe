@@ -426,6 +426,24 @@ select option {
   color: var(--text);
 }
 
+.spec-generate-select {
+  min-width: 160px;
+  padding: 6px 30px 6px 10px;
+  font-size: 11px;
+  font-family: inherit;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background-color: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+}
+
+.spec-generate-select:hover,
+.spec-generate-select:focus {
+  border-color: var(--accent);
+  color: var(--accent);
+  background-color: rgba(var(--accent-rgb), 0.16);
+}
+
 .form-ft { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 
 .dialog-overlay {
