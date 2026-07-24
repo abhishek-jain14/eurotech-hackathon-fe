@@ -8,12 +8,6 @@ import { buildGherkinLines } from './gherkinPreview';
 const EMPTY_FORM = { name: '', httpMethod: 'GET', endpoint: '', scenarioType: 'POSITIVE', source: 'MANUAL', riskLevel: 'MEDIUM', description: '' };
 const EMPTY_API_TEST_DATA = { endpoint: null, expectedStatusCode: 200, active: true };
 
-const GENERATION_OPTIONS = [
-  { value: 'POSITIVE', label: 'Positive only' },
-  { value: 'NEGATIVE', label: 'Negative only' },
-  { value: 'POSITIVE_NEGATIVE', label: 'Positive + Negative' }
-];
-
 // Expected-status choices offered per scenario type, mirroring the reference mockup.
 const STATUS_OPTIONS = {
   POSITIVE: ['200 OK', '201 Created', '202 Accepted', '204 No Content'],
@@ -83,7 +77,7 @@ export default function ScenarioForm({ applicationId, applicationName, projectId
 
   const [versions, setVersions] = useState([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
-  const [genType, setGenType] = useState('POSITIVE_NEGATIVE');
+  const [genPrompt, setGenPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
   const [genMessage, setGenMessage] = useState(null);
   const [genError, setGenError] = useState(null);
@@ -214,12 +208,12 @@ export default function ScenarioForm({ applicationId, applicationName, projectId
   const removeValidationRow = (id) => setValidationRows((rows) => rows.filter((r) => r.id !== id));
 
   const handleGenerate = async () => {
-    if (!currentVersion) return;
+    if (!currentVersion || !genPrompt.trim()) return;
     setGenerating(true);
     setGenError(null);
     setGenMessage(null);
     try {
-      const created = await generateScenariosForSpecVersion(applicationId, currentVersion.id, genType);
+      const created = await generateScenariosForSpecVersion(applicationId, currentVersion.id, 'POSITIVE_NEGATIVE', genPrompt.trim());
       const count = Array.isArray(created) ? created.length : 0;
       setGenMessage(`${count} scenario${count === 1 ? '' : 's'} generated`);
       onSaved(false);
@@ -350,13 +344,17 @@ export default function ScenarioForm({ applicationId, applicationName, projectId
             {!versionsLoading && currentVersion && (
               <>
                 <div className="fld">
-                  <label>Scenario Type</label>
-                  <select value={genType} onChange={(e) => setGenType(e.target.value)}>
-                    {GENERATION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                  <label>AI Prompt <span style={{ color: 'var(--red)' }}>*</span></label>
+                  <textarea
+                    rows={4}
+                    value={genPrompt}
+                    onChange={(e) => setGenPrompt(e.target.value)}
+                    placeholder='Describe what to test, e.g. "Focus on validation errors for missing required fields and boundary values on numeric fields"'
+                  />
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 12 }}>Using spec version v{currentVersion.versionNumber} (current).</div>
-                <button type="button" className="btn btn-primary" disabled={generating} onClick={handleGenerate}>{generating ? 'Generating…' : '✦ Generate'}</button>
+                <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 12 }}>Using spec version v{currentVersion.versionNumber} (current). Generates both positive and negative scenarios for every endpoint.</div>
+                <button type="button" className="btn btn-primary" disabled={generating || !genPrompt.trim()} onClick={handleGenerate}>{generating ? 'Generating…' : '✦ Generate'}</button>
+                {!genPrompt.trim() && <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 6 }}>A prompt is required to generate scenarios.</div>}
                 {genError && <div className="readonly-banner" style={{ marginTop: 10 }}>{genError}</div>}
                 {genMessage && (
                   <div className="sc-ai-box" style={{ marginTop: 12 }}>
@@ -438,7 +436,19 @@ export default function ScenarioForm({ applicationId, applicationName, projectId
               </div>
             </div>
 
-            <div className="fld"><label>Description</label><textarea rows={3} value={form.description} onChange={(e) => update('description', e.target.value)} placeholder="What does this test verify?" /></div>
+            <div className="fld">
+              <label>Description</label>
+              {isEdit ? (
+                <>
+                  <textarea rows={3} value={form.description} readOnly disabled style={{ color: 'var(--text-dim)' }} />
+                  <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 4 }}>
+                    This is the generated Gherkin steps run at execution — not editable here to avoid desyncing it from the scenario's header/path/query fields.
+                  </div>
+                </>
+              ) : (
+                <textarea rows={3} value={form.description} onChange={(e) => update('description', e.target.value)} placeholder="What does this test verify?" />
+              )}
+            </div>
 
             {fieldRows.length > 0 && (
               <div className="fld">

@@ -1,5 +1,6 @@
-// Builds a client-side Gherkin preview from a scenario's real apiTestData.
-// Pure, no side effects — consumed by the Steps tab for display only, never sent anywhere.
+// Tokenizes a scenario's real, backend-generated Gherkin text (scenario.description -
+// the exact Scenario Outline the execution engine runs, see RuleBasedScenarioGenerator)
+// for syntax-highlighted display. Pure, no side effects — consumed by the Steps tab.
 
 const keyword = (text) => ({ cls: 'gk', text });
 const value = (text) => ({ cls: 'gv', text });
@@ -7,52 +8,50 @@ const placeholder = (text) => ({ cls: 'gp', text });
 const comment = (text) => ({ cls: 'gc', text });
 const plain = (text) => ({ cls: '', text });
 
+const STEP_KEYWORDS = ['Given', 'When', 'Then', 'And', 'But'];
+
+/** Splits "...to <name>..." into plain/placeholder tokens, preserving the rest of the line as-is. */
+function tokenizeRest(text) {
+  const tokens = [];
+  const regex = /<[^<>]+>/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) tokens.push(plain(text.slice(lastIndex, match.index)));
+    tokens.push(placeholder(match[0]));
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) tokens.push(plain(text.slice(lastIndex)));
+  return tokens;
+}
+
+function tokenizeLine(line) {
+  const trimmed = line.trimStart();
+  const indent = line.slice(0, line.length - trimmed.length);
+
+  if (trimmed === '') return [plain('')];
+  if (trimmed.startsWith('#')) return [comment(line)];
+  if (trimmed.startsWith('@')) return [plain(indent), keyword(trimmed)];
+
+  const scenarioMatch = trimmed.match(/^(Scenario Outline:|Scenario:)(.*)$/);
+  if (scenarioMatch) {
+    return [plain(indent), keyword(scenarioMatch[1]), ...tokenizeRest(scenarioMatch[2])];
+  }
+
+  const stepKeyword = STEP_KEYWORDS.find((kw) => trimmed === kw || trimmed.startsWith(kw + ' '));
+  if (stepKeyword) {
+    const rest = trimmed.slice(stepKeyword.length);
+    return [plain(indent), keyword(stepKeyword), ...tokenizeRest(rest)];
+  }
+
+  return [plain(indent), ...tokenizeRest(trimmed)];
+}
+
 export function buildGherkinLines(scenario) {
   if (!scenario) return [];
-
-  const atd = scenario.apiTestData || {};
-  const method = scenario.httpMethod || atd.endpoint?.httpMethod || 'GET';
-  const path = scenario.endpoint || atd.endpoint?.path || '';
-  const headers = atd.headers && typeof atd.headers === 'object' ? atd.headers : {};
-  const pathOrQueryParams = atd.pathOrQueryParams && typeof atd.pathOrQueryParams === 'object' ? atd.pathOrQueryParams : {};
-  const requestBodyValues = atd.requestBodyValues && typeof atd.requestBodyValues === 'object' ? atd.requestBodyValues : null;
-  const expectedStatusCode = atd.expectedStatusCode;
-  const expectedResponseBody = atd.expectedResponseBody;
-
-  const lines = [];
-  lines.push([keyword('Scenario:'), plain(` ${scenario.name || 'Untitled scenario'}`)]);
-
-  if (path) {
-    lines.push([keyword('Given'), plain(' the API endpoint '), value(`${method} ${path}`), plain(' is available')]);
-  } else {
-    lines.push([comment('# No endpoint captured for this scenario')]);
+  const description = scenario.description;
+  if (!description || !description.trim()) {
+    return [[comment('# No Gherkin steps captured for this scenario')]];
   }
-
-  Object.keys(headers).forEach((name) => {
-    lines.push([keyword('And'), plain(' the request header '), value(`"${name}"`), plain(' is set to '), placeholder(String(headers[name]))]);
-  });
-
-  Object.keys(pathOrQueryParams).forEach((name) => {
-    lines.push([keyword('And'), plain(' the path/query parameter '), value(`"${name}"`), plain(' is set to '), placeholder(String(pathOrQueryParams[name]))]);
-  });
-
-  if (requestBodyValues) {
-    Object.keys(requestBodyValues).forEach((name) => {
-      lines.push([keyword('And'), plain(' the request body field '), value(`"${name}"`), plain(' is set to '), placeholder(String(requestBodyValues[name]))]);
-    });
-  }
-
-  lines.push([keyword('When'), plain(' the request is sent')]);
-
-  if (expectedStatusCode != null && expectedStatusCode !== '') {
-    lines.push([keyword('Then'), plain(' the response status code should be '), value(String(expectedStatusCode))]);
-  }
-  if (expectedResponseBody) {
-    lines.push([keyword('And'), plain(' the response body should contain '), value(String(expectedResponseBody))]);
-  }
-  if ((expectedStatusCode == null || expectedStatusCode === '') && !expectedResponseBody) {
-    lines.push([comment('# No expected status code or response body captured for this scenario')]);
-  }
-
-  return lines;
+  return description.replace(/\n$/, '').split('\n').map(tokenizeLine);
 }

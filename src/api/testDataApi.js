@@ -13,4 +13,5 @@ export const bulkUploadTestData = (applicationId, scenarioId, file) => {
 };
 export const updateTestData = (id, payload) => axiosClient.put(`${BASE}/${id}`, payload).then((r) => r.data.data);
 export const listTestDataByApplication = (applicationId, params) => axiosClient.get(`${BASE}/application/${applicationId}`, { params }).then((r) => r.data.data);
+export const listTestDataByScenario = (scenarioId) => axiosClient.get(`${BASE}/scenario/${scenarioId}`).then((r) => r.data.data);
 export const deleteTestData = (id) => axiosClient.delete(`${BASE}/${id}`).then((r) => r.data.data);

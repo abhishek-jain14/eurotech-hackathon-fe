@@ -25,8 +25,8 @@ export const approveSpecVersion = (id, versionId) => axiosClient.post(`${BASE}/$
 export const rejectSpecVersion = (id, versionId) => axiosClient.post(`${BASE}/${id}/spec-versions/${versionId}/reject`).then((r) => r.data.data);
 
 // AI scenario generation from a spec version, scoped by scenario type
-export const generateScenariosForSpecVersion = (id, versionId, scenarioType) =>
-  axiosClient.post(`${BASE}/${id}/spec-versions/${versionId}/generate-scenarios`, { scenarioType }).then((r) => r.data.data);
+export const generateScenariosForSpecVersion = (id, versionId, scenarioType, prompt) =>
+  axiosClient.post(`${BASE}/${id}/spec-versions/${versionId}/generate-scenarios`, { scenarioType, prompt }).then((r) => r.data.data);
 
 // Fetch available endpoints for an application
 export const fetchEndpoints = (id) => axiosClient.get(`${BASE}/${id}/fetch-endpoints`).then((r) => r.data.data);

@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listApplications, fetchEndpoints } from '../../api/applicationApi';
 import { listScenariosByApplication, createScenario, updateScenario, deleteScenario } from '../../api/scenarioApi';
+import { listTestDataByScenario } from '../../api/testDataApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
 import { useDialog } from '../../context/DialogContext';
 import ScenarioForm from './ScenarioForm';
 import { buildGherkinLines } from './gherkinPreview';
 import { normalizeListResponse } from '../../utils/normalizeListResponse';
+import { parseFieldsJson, previewPairs, fieldCount } from '../testdata/testDataFields';
 
 const FILTERS = [
   { key: 'all', label: 'All' },
@@ -120,8 +122,66 @@ function StepsTab({ scenario }) {
   );
 }
 
-function DataTab() {
-  return <div className="empty-state">No linked dataset — test data linking isn't available for scenarios yet.</div>;
+function DataTab({ scenario, navigate }) {
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    setError(null);
+    listTestDataByScenario(scenario.id)
+      .then((data) => { if (mounted) setRecords(Array.isArray(data) ? data : []); })
+      .catch((err) => { if (mounted) setError(err.response?.data?.message || 'Unable to load test data'); })
+      .finally(() => { if (mounted) setLoading(false); });
+    return () => { mounted = false; };
+  }, [scenario.id]);
+
+  if (loading) return <div className="skeleton-block" style={{ height: 80 }} />;
+  if (error) return <div className="readonly-banner">{error}</div>;
+  if (records.length === 0) {
+    return (
+      <div className="empty-state">
+        <div>No test data linked to this scenario yet.</div>
+        <button
+          className="btn btn-ghost btn-sm"
+          style={{ marginTop: 10 }}
+          onClick={() => navigate('/testdata', { state: { applicationId: String(scenario.applicationId), scenarioId: String(scenario.id) } })}
+        >
+          + Create Test Data
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{records.length} record{records.length === 1 ? '' : 's'}</span>
+        <button className="btn btn-ghost btn-sm" onClick={() => navigate('/testdata', { state: { applicationId: String(scenario.applicationId) } })}>Manage in Test Data →</button>
+      </div>
+      <table>
+        <thead><tr><th>Record</th><th>Mode</th><th>Status</th><th>Fields</th><th>Preview</th></tr></thead>
+        <tbody>
+          {records.map((r) => {
+            const parsed = parseFieldsJson(r.fieldsJson);
+            return (
+              <tr key={r.id}>
+                <td>{r.recordName}</td>
+                <td>{r.mode}</td>
+                <td><span className={`tag ${r.status === 'VALID' ? 'tag-g' : 'tag-r'}`}>{r.status === 'VALID' ? 'Valid' : 'Invalid'}</span></td>
+                <td>{fieldCount(parsed)}</td>
+                <td style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+                  {previewPairs(parsed).map(([k, v]) => `${k}=${v}`).join(', ') || '—'}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function HistoryTab({ navigate }) {
@@ -410,7 +470,7 @@ export default function ScenarioListPage() {
                         />
                       )}
                       {activeTab === 'steps' && <StepsTab scenario={activeScenario} />}
-                      {activeTab === 'data' && <DataTab />}
+                      {activeTab === 'data' && <DataTab scenario={activeScenario} navigate={navigate} />}
                       {activeTab === 'history' && <HistoryTab navigate={navigate} />}
                     </>
                   )}
