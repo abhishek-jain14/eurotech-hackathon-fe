@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { listApplications, fetchEndpoints } from '../../api/applicationApi';
 import { listScenariosByApplication } from '../../api/scenarioApi';
 import { listTestDataByApplication, updateTestData, deleteTestData } from '../../api/testDataApi';
