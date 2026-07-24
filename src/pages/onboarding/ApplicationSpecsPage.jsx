@@ -35,6 +35,7 @@ export default function ApplicationSpecsPage({ id: idProp, onBack }) {
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState(null);
+  const [useAiAgent, setUseAiAgent] = useState(false);
   const [reviewing, setReviewing] = useState(null); // { version, impact }
   const [genType, setGenType] = useState({}); // versionId -> selected scenario type
   const [generating, setGenerating] = useState(null); // versionId in flight
@@ -65,8 +66,12 @@ export default function ApplicationSpecsPage({ id: idProp, onBack }) {
     setFetching(true);
     setError(null);
     try {
-      await fetchApplicationSpec(id);
-      notify({ title: 'Specification fetched', message: 'The latest specification was fetched successfully.', variant: 'success' });
+      // fetchApplicationSpec resolves the whole ApiResponse envelope (not just .data) - its
+      // message already reflects what actually happened (initial capture vs. changes detected),
+      // plus an "N scenario(s) generated via AI agent" suffix when useAiAgent produced any -
+      // so surface that instead of a generic fixed string that hides whether scenarios were made.
+      const result = await fetchApplicationSpec(id, useAiAgent);
+      notify({ title: 'Specification fetched', message: result?.message || 'The latest specification was fetched successfully.', variant: 'success' });
       loadVersions();
     } catch (err) {
       setError(err.response?.data?.message || 'Unable to fetch spec');
@@ -81,8 +86,11 @@ export default function ApplicationSpecsPage({ id: idProp, onBack }) {
     setFetching(true);
     setError(null);
     try {
-      await uploadApplicationSpec(id, file);
-      notify({ title: 'Specification uploaded', message: 'The spec file was uploaded successfully.', variant: 'success' });
+      // uploadApplicationSpec now resolves a SpecFetchResultDto (same shape fetch uses) whose
+      // message already reflects what happened (uploaded/unchanged, current vs. pending) plus an
+      // "N scenario(s) generated via AI agent" suffix when useAiAgent produced any.
+      const result = await uploadApplicationSpec(id, file, useAiAgent);
+      notify({ title: 'Specification uploaded', message: result?.message || 'The spec file was uploaded successfully.', variant: 'success' });
       loadVersions();
     } catch (err) {
       setError(err.response?.data?.message || 'Unable to upload spec');
@@ -146,6 +154,16 @@ export default function ApplicationSpecsPage({ id: idProp, onBack }) {
       </div>
 
       {error && <div className="readonly-banner">{error}</div>}
+
+      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <input
+          type="radio"
+          id="use-ai-agent"
+          checked={useAiAgent}
+          onChange={() => setUseAiAgent((v) => !v)}
+        />
+        <label htmlFor="use-ai-agent" style={{ fontSize: 12, cursor: 'pointer' }}>Use AI Agent</label>
+      </div>
 
       <div style={{ marginBottom: 16 }}>
         <button className="btn btn-primary" onClick={handleFetch} disabled={fetching}>{fetching ? 'Fetching…' : 'Fetch Now'}</button>
