@@ -47,19 +47,34 @@ export default function ExecutionPage() {
     setSelectedScenarioIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
-  const handleRun = async () => {
+  const runExecutionForIds = async (scenarioIds) => {
     setError(null);
     if (!environmentId) { setError('Add an environment under this application\'s project first'); return; }
-    if (selectedScenarioIds.length === 0) { setError('Select at least one scenario to execute'); return; }
+    if (scenarioIds.length === 0) { setError('Select at least one scenario to execute'); return; }
     setRunning(true);
     try {
-      await triggerExecution({ applicationId: Number(applicationId), environmentId: Number(environmentId), scenarioIds: selectedScenarioIds });
+      await triggerExecution({ applicationId: Number(applicationId), environmentId: Number(environmentId), scenarioIds });
       setSelectedScenarioIds([]);
       load();
     } catch (err) {
       setError(err.response?.data?.message || 'Execution failed to start');
     } finally {
       setRunning(false);
+    }
+  };
+
+  const handleRun = async () => {
+    await runExecutionForIds(selectedScenarioIds);
+  };
+
+  const hasSelectedScenarios = selectedScenarioIds.length > 0;
+  const allScenariosSelected = scenarios.length > 0 && selectedScenarioIds.length === scenarios.length;
+
+  const toggleSelectAll = () => {
+    if (allScenariosSelected) {
+      setSelectedScenarioIds([]);
+    } else {
+      setSelectedScenarioIds(scenarios.map((scenario) => scenario.id));
     }
   };
 
@@ -85,6 +100,10 @@ export default function ExecutionPage() {
       <RoleGate roles={EDIT_ROLES}>
         <div className="card">
           <div className="card-hd"><span className="card-title">Select Scenarios</span><span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{selectedScenarioIds.length} of {scenarios.length} selected</span></div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 8 }}>
+            <input type="checkbox" checked={allScenariosSelected} onChange={toggleSelectAll} />
+            Select all
+          </label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 200, overflowY: 'auto', marginBottom: 12 }}>
             {scenarios.map((s) => (
               <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
@@ -93,7 +112,7 @@ export default function ExecutionPage() {
               </label>
             ))}
           </div>
-          <button className="btn btn-primary" onClick={handleRun} disabled={running}>{running ? 'Running…' : '▶ Run Selected'}</button>
+          <button className="btn btn-primary" onClick={handleRun} disabled={running || !hasSelectedScenarios}>{running ? 'Running…' : '▶ Run Selected'}</button>
         </div>
       </RoleGate>
 
