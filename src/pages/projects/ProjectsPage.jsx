@@ -4,6 +4,7 @@ import { createProject, updateProject, deleteProject } from '../../api/projectAp
 import { useProjectCache } from '../../context/ProjectCacheContext';
 import RoleGate from '../../components/common/RoleGate';
 import { ADMIN_ONLY } from '../../constants/roles';
+import { useDialog } from '../../context/DialogContext';
 
 const EMPTY_FORM = { name: '', description: '', jiraUrl: '' };
 
@@ -13,6 +14,7 @@ export default function ProjectsPage() {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState(null);
+  const { confirm, notify } = useDialog();
 
   useEffect(() => { 
     ensureLoaded().catch(err => console.error('Error loading projects:', err));
@@ -55,12 +57,14 @@ export default function ProjectsPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this project? All environments and applications under it must be removed first.')) return;
+    const shouldDelete = await confirm({ title: 'Delete project?', message: 'All environments and applications under this project will be affected. Continue?', variant: 'danger', confirmLabel: 'Delete' });
+    if (!shouldDelete) return;
     try {
       await deleteProject(id);
       reloadProjects();
+      notify({ title: 'Project deleted', message: 'The project was removed successfully.', variant: 'success' });
     } catch (err) {
-      alert(err.response?.data?.message || 'Unable to delete project');
+      notify({ title: 'Delete failed', message: err.response?.data?.message || 'Unable to delete project', variant: 'danger' });
     }
   };
 

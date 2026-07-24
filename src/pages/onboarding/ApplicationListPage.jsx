@@ -6,6 +6,7 @@ import {
 } from '../../api/applicationApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES, ROLES } from '../../constants/roles';
+import { useDialog } from '../../context/DialogContext';
 import { normalizeListResponse } from '../../utils/normalizeListResponse';
 
 export default function ApplicationListPage() {
@@ -13,6 +14,7 @@ export default function ApplicationListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reviewing, setReviewing] = useState(null); // { app, pending, impact }
+  const { confirm, notify } = useDialog();
 
   const load = () => {
     setLoading(true);
@@ -27,9 +29,15 @@ export default function ApplicationListPage() {
   }, []);
 
   const handleDelete = async (id) => {
-    if (!confirm('Permanently delete this application?')) return;
-    await deleteApplication(id);
-    load();
+    const shouldDelete = await confirm({ title: 'Delete application?', message: 'This will permanently remove the application and its related setup. Continue?', variant: 'danger', confirmLabel: 'Delete' });
+    if (!shouldDelete) return;
+    try {
+      await deleteApplication(id);
+      notify({ title: 'Application deleted', message: 'The application was removed successfully.', variant: 'success' });
+      load();
+    } catch (err) {
+      notify({ title: 'Delete failed', message: err.response?.data?.message || 'Unable to delete application', variant: 'danger' });
+    }
   };
 
   const openReview = async (app) => {

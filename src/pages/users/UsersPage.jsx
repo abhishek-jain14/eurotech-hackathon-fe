@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { listUsers, createUser, deactivateUser, deleteUser } from '../../api/userApi';
+import { useDialog } from '../../context/DialogContext';
 import { normalizeListResponse } from '../../utils/normalizeListResponse';
 
 const EMPTY_FORM = { username: '', password: '', fullName: '', email: '', role: 'TESTER' };
@@ -8,6 +9,7 @@ export default function UsersPage() {
   const [users, setUsers] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState(null);
+  const { confirm } = useDialog();
 
   const load = () => listUsers({ size: 100 }).then((payload) => setUsers(normalizeListResponse(payload))).catch(() => setUsers([]));
 
@@ -31,7 +33,8 @@ export default function UsersPage() {
 
   const handleDeactivate = async (id) => { await deactivateUser(id); load(); };
   const handleDelete = async (id) => {
-    if (!confirm('Permanently delete this user?')) return;
+    const shouldDelete = await confirm({ title: 'Delete user?', message: 'This will permanently delete the selected user. Continue?', variant: 'danger', confirmLabel: 'Delete' });
+    if (!shouldDelete) return;
     await deleteUser(id);
     load();
   };

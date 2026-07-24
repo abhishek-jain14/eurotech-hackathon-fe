@@ -4,6 +4,7 @@ import { listApplications, fetchEndpoints } from '../../api/applicationApi';
 import { listScenariosByApplication, createScenario, updateScenario, deleteScenario } from '../../api/scenarioApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
+import { useDialog } from '../../context/DialogContext';
 import ScenarioForm from './ScenarioForm';
 import { buildGherkinLines } from './gherkinPreview';
 import { normalizeListResponse } from '../../utils/normalizeListResponse';
@@ -150,6 +151,7 @@ export default function ScenarioListPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingScenario, setEditingScenario] = useState(null);
   const [error, setError] = useState(null);
+  const { confirm } = useDialog();
 
   useEffect(() => {
     listApplications({ size: 100 }).then((payload) => {
@@ -224,7 +226,8 @@ export default function ScenarioListPage() {
   const closeForm = () => { setShowForm(false); setEditingScenario(null); };
 
   const handleDeleteOne = async (id) => {
-    if (!confirm('Delete this scenario?')) return;
+    const shouldDelete = await confirm({ title: 'Delete scenario?', message: 'This will remove the scenario from the application. Continue?', variant: 'danger', confirmLabel: 'Delete' });
+    if (!shouldDelete) return;
     setError(null);
     try {
       await deleteScenario(id);
@@ -258,7 +261,8 @@ export default function ScenarioListPage() {
   };
 
   const handleBulkDelete = async () => {
-    if (!confirm(`Delete ${selectedIds.length} scenario(s)?`)) return;
+    const shouldDelete = await confirm({ title: 'Delete selected scenarios?', message: `This will remove ${selectedIds.length} selected scenario(s). Continue?`, variant: 'danger', confirmLabel: 'Delete' });
+    if (!shouldDelete) return;
     setError(null);
     try {
       for (const id of selectedIds) await deleteScenario(id);

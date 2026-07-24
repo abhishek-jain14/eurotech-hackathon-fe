@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('admin');
@@ -8,6 +9,7 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const { login } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -26,12 +28,20 @@ export default function LoginPage() {
     }
   };
 
+  const passwordValid = password.length === 4;
+
   return (
     <div className="login-shell">
       <div className="login-card">
-        <div className="login-title">QA<span>Genie</span></div>
-        <div className="login-sub">WISH. TEST. SHIP.</div>
-
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div>
+            <div className="login-title">QA<span>Genie</span></div>
+            <div className="login-sub">WISH. TEST. SHIP.</div>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={toggleTheme} type="button">
+            {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+          </button>
+        </div>
         <form onSubmit={handleSubmit}>
           <div className="fld">
             <label>Username</label>
@@ -41,7 +51,7 @@ export default function LoginPage() {
             <label>Password</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
-          <button className="btn btn-primary" type="submit" disabled={submitting} style={{ width: '100%' }}>
+          <button className="btn btn-primary" type="submit" disabled={submitting || !passwordValid} style={{ width: '100%' }}>
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>
           {error && <div className="login-error">{error}</div>}

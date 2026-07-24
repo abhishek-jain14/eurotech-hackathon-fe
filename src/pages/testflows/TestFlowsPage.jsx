@@ -4,6 +4,7 @@ import { listScenariosByApplication } from '../../api/scenarioApi';
 import { listTestFlowsByApplication, createTestFlow, deleteTestFlow } from '../../api/testFlowApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
+import { useDialog } from '../../context/DialogContext';
 import { normalizeListResponse } from '../../utils/normalizeListResponse';
 
 const buildFlowStep = (scenario, fallbackName = 'Scenario') => ({
@@ -24,6 +25,7 @@ export default function TestFlowsPage() {
   const [selectedSteps, setSelectedSteps] = useState([]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const { confirm } = useDialog();
 
   useEffect(() => {
     listApplications({ size: 100 })
@@ -150,7 +152,8 @@ export default function TestFlowsPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this test flow?')) return;
+    const shouldDelete = await confirm({ title: 'Delete test flow?', message: 'This will remove the saved flow from the application. Continue?', variant: 'danger', confirmLabel: 'Delete' });
+    if (!shouldDelete) return;
     try {
       await deleteTestFlow(id);
       setFlows((prev) => prev.filter((flow) => flow.id !== id));

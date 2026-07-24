@@ -5,6 +5,7 @@ import { listScenariosByApplication } from '../../api/scenarioApi';
 import { listTestDataByApplication, updateTestData, deleteTestData } from '../../api/testDataApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
+import { useDialog } from '../../context/DialogContext';
 import { normalizeListResponse } from '../../utils/normalizeListResponse';
 import TestDataForm from './TestDataForm';
 import { parseFieldsJson, previewPairs, fieldCount, effectiveFieldEntries, effectiveGroupKey, headerKeys } from './testDataFields';
@@ -33,6 +34,7 @@ export default function TestDataPage() {
   const [editValues, setEditValues] = useState({});
   const [editStatus, setEditStatus] = useState('VALID');
   const [saving, setSaving] = useState(false);
+  const { confirm } = useDialog();
 
   useEffect(() => {
     listApplications({ size: 100 }).then((page) => {
@@ -108,7 +110,8 @@ export default function TestDataPage() {
   const closeCreateForm = () => { setPendingScenarioId(null); setShowForm(false); };
 
   const handleDeleteOne = async (id) => {
-    if (!confirm('Delete this test data record?')) return;
+    const shouldDelete = await confirm({ title: 'Delete test data?', message: 'This will remove the selected test data record. Continue?', variant: 'danger', confirmLabel: 'Delete' });
+    if (!shouldDelete) return;
     setError(null);
     try {
       await deleteTestData(id);
@@ -121,7 +124,8 @@ export default function TestDataPage() {
   };
 
   const handleBulkDelete = async () => {
-    if (!confirm(`Delete ${selectedIds.length} record(s)?`)) return;
+    const shouldDelete = await confirm({ title: 'Delete selected records?', message: `This will remove ${selectedIds.length} selected record(s). Continue?`, variant: 'danger', confirmLabel: 'Delete' });
+    if (!shouldDelete) return;
     setError(null);
     try {
       for (const id of selectedIds) await deleteTestData(id);

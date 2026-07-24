@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { listEnvironmentsByProject, createEnvironment, updateEnvironment, deleteEnvironment } from '../../api/environmentApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
+import { useDialog } from '../../context/DialogContext';
 
 const ENV_NAMES = ['Dev', 'UAT', 'Staging', 'Prod'];
 const CONFIG_TYPES = ['SwaggerUrl', 'Database'];
@@ -15,6 +16,7 @@ export default function EnvironmentListPage() {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState(null);
+  const { confirm } = useDialog();
 
   const load = () => {
     listEnvironmentsByProject(projectId).then(setEnvironments).catch(() => setError('Unable to load environments.'));
@@ -65,7 +67,8 @@ export default function EnvironmentListPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Remove this environment configuration?')) return;
+    const shouldDelete = await confirm({ title: 'Remove environment?', message: 'This will delete the environment configuration. Continue?', variant: 'danger', confirmLabel: 'Remove' });
+    if (!shouldDelete) return;
     await deleteEnvironment(id);
     load();
   };

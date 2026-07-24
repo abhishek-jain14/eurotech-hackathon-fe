@@ -6,6 +6,7 @@ import {
 } from '../../api/applicationApi';
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
+import { useDialog } from '../../context/DialogContext';
 
 const STATUS_TAG = { CURRENT: 'tag-g', PENDING: 'tag-p', REJECTED: 'tag-r' };
 
@@ -35,6 +36,7 @@ export default function ApplicationSpecsPage() {
   const [reviewing, setReviewing] = useState(null); // { version, impact }
   const [genType, setGenType] = useState({}); // versionId -> selected scenario type
   const [generating, setGenerating] = useState(null); // versionId in flight
+  const { notify } = useDialog();
 
   const loadVersions = () => listSpecVersions(id).then(setVersions).catch(() => setVersions([]));
 
@@ -58,7 +60,7 @@ export default function ApplicationSpecsPage() {
     setError(null);
     try {
       await fetchApplicationSpec(id);
-      alert('Specification fetched successfully');
+      notify({ title: 'Specification fetched', message: 'The latest specification was fetched successfully.', variant: 'success' });
       loadVersions();
     } catch (err) {
       setError(err.response?.data?.message || 'Unable to fetch spec');
@@ -74,7 +76,7 @@ export default function ApplicationSpecsPage() {
     setError(null);
     try {
       await uploadApplicationSpec(id, file);
-      alert('Spec uploaded');
+      notify({ title: 'Specification uploaded', message: 'The spec file was uploaded successfully.', variant: 'success' });
       loadVersions();
     } catch (err) {
       setError(err.response?.data?.message || 'Unable to upload spec');
@@ -112,7 +114,7 @@ export default function ApplicationSpecsPage() {
     try {
       const created = await generateScenariosForSpecVersion(id, version.id, scenarioType);
       const count = Array.isArray(created) ? created.length : 0;
-      alert(`${count} scenario${count === 1 ? '' : 's'} generated`);
+      notify({ title: 'Scenarios generated', message: `${count} scenario${count === 1 ? '' : 's'} generated successfully.`, variant: 'success' });
     } catch (err) {
       setError(err.response?.data?.message || 'Unable to generate scenarios');
     } finally {
