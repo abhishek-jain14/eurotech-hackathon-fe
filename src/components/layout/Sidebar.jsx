@@ -19,10 +19,10 @@ const NAV_SECTIONS = [
     label: 'Testing',
     items: [
       { to: '/scenarios', label: 'Scenarios', icon: '≡' },
-      { to: '/coverage', label: 'Coverage', icon: '◎' },
       { to: '/testdata', label: 'Test Data', icon: '⊞' },
       { to: '/testflows', label: 'Test Flows', icon: '⤳' },
-      { to: '/execution', label: 'Execution', icon: '▶' }
+      { to: '/execution', label: 'Execution', icon: '▶' },
+      { to: '/coverage', label: 'Coverage', icon: '◎' }
     ]
   },
   {

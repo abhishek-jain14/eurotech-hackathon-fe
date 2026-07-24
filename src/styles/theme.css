@@ -153,7 +153,70 @@ a { color: inherit; }
 .topbar-title { font-size: 14px; font-weight: 700; }
 .topbar-crumb { font-size: 11px; color: var(--text-dim); }
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.profile-section {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
 .role-badge { font-size: 10px; padding: 3px 8px; border-radius: 5px; border: 1px solid var(--border-2); color: var(--purple); }
+.profile-trigger {
+  font-family: inherit;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.profile-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text);
+  background: rgba(var(--purple-rgb), 0.28);
+  border: 1px solid rgba(var(--purple-rgb), 0.5);
+}
+
+.profile-trigger:hover,
+.profile-trigger:focus {
+  border-color: var(--purple);
+  color: var(--text);
+}
+
+.profile-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  padding: 6px;
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  background-color: var(--surface);
+  opacity: 1;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.32);
+  z-index: 30;
+}
+
+.profile-logout {
+  width: 100%;
+  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+}
+
+.profile-logout:hover {
+  border-color: var(--accent);
+}
 
 .content { padding: 20px; overflow-y: auto; }
 
@@ -323,6 +386,43 @@ tr:hover td { background: var(--surface-2); }
   outline: none;
 }
 .fld input:focus, .fld select:focus, .fld textarea:focus { border-color: var(--accent); }
+
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  border-color: var(--border-2);
+  padding-right: 32px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
+    linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) calc(50% - 2px),
+    calc(100% - 9px) calc(50% - 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  transition: transform 0.2s ease, border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+select:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.12);
+}
+
+select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.2);
+}
+
+select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+select option {
+  background: var(--surface-2);
+  color: var(--text);
+}
 
 .form-ft { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 
