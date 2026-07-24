@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { listApplications, fetchEndpoints } from '../../api/applicationApi';
 import { listScenariosByApplication } from '../../api/scenarioApi';
 import { listTestDataByApplication, updateTestData, deleteTestData } from '../../api/testDataApi';
@@ -9,6 +10,13 @@ import TestDataForm from './TestDataForm';
 import { parseFieldsJson, previewPairs, fieldCount, effectiveFieldEntries, effectiveGroupKey, headerKeys } from './testDataFields';
 
 export default function TestDataPage() {
+  // Deep-link from Coverage's "+ Create Test Data" button: land on this application
+  // with the create form already open for the scenario that's missing data. Captured
+  // once at mount so it survives even after the router state itself is transient.
+  const location = useLocation();
+  const [deepLinkApplicationId] = useState(location.state?.applicationId ? String(location.state.applicationId) : null);
+  const [pendingScenarioId, setPendingScenarioId] = useState(location.state?.scenarioId ? String(location.state.scenarioId) : null);
+
   const [applications, setApplications] = useState([]);
   const [applicationId, setApplicationId] = useState('');
   const [records, setRecords] = useState([]);
@@ -30,14 +38,18 @@ export default function TestDataPage() {
     listApplications({ size: 100 }).then((page) => {
       const list = normalizeListResponse(page);
       setApplications(list);
-      if (list.length && !applicationId) setApplicationId(String(list[0].id));
+      if (deepLinkApplicationId) {
+        setApplicationId(deepLinkApplicationId);
+      } else if (list.length && !applicationId) {
+        setApplicationId(String(list[0].id));
+      }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const load = () => {
     if (!applicationId) { setRecords([]); return; }
-    listTestDataByApplication(applicationId, { size: 200 }).then((payload) => setRecords(normalizeListResponse(payload))).catch(() => setRecords([]));
+    listTestDataByApplication(applicationId, { size: 200 }).then((page) => setRecords(page.content || []));
   };
 
   useEffect(() => {
@@ -54,7 +66,17 @@ export default function TestDataPage() {
       setEndpoints([]);
       return;
     }
-    listScenariosByApplication(applicationId, { size: 200 }).then((payload) => setScenarios(normalizeListResponse(payload))).catch(() => setScenarios([]));
+    listScenariosByApplication(applicationId, { size: 200 })
+      .then((page) => {
+        const list = page.content || [];
+        setScenarios(list);
+        // Only auto-open once, for the application the deep-link actually targeted -
+        // switching applications afterwards shouldn't keep popping the form back open.
+        if (pendingScenarioId && applicationId === deepLinkApplicationId && list.some((s) => String(s.id) === pendingScenarioId)) {
+          setShowForm(true);
+        }
+      })
+      .catch(() => setScenarios([]));
     fetchEndpoints(applicationId)
       .then((data) => {
         const list = Array.isArray(data?.content) ? data.content : Array.isArray(data) ? data : [];
@@ -82,8 +104,8 @@ export default function TestDataPage() {
     setEditing(true);
   };
 
-  const openCreateForm = () => setShowForm(true);
-  const closeCreateForm = () => setShowForm(false);
+  const openCreateForm = () => { setPendingScenarioId(null); setShowForm(true); };
+  const closeCreateForm = () => { setPendingScenarioId(null); setShowForm(false); };
 
   const handleDeleteOne = async (id) => {
     if (!confirm('Delete this test data record?')) return;
@@ -298,6 +320,7 @@ export default function TestDataPage() {
             applications={applications}
             scenarios={scenarios}
             endpoints={endpoints}
+            initialScenarioId={pendingScenarioId}
             onSaved={(shouldClose) => { load(); if (shouldClose) closeCreateForm(); }}
             onClose={closeCreateForm}
           />

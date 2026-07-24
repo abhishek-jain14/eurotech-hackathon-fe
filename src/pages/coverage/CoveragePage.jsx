@@ -1,6 +1,8 @@
 import { useEffect, useState, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getCoverageOverview, getApplicationCoverage } from '../../api/coverageApi';
+import RoleGate from '../../components/common/RoleGate';
+import { EDIT_ROLES, ROLES } from '../../constants/roles';
 
 const APP_STATUS_TAG = { GOOD: 'tag-g', FAILURES: 'tag-r', UNCOVERED: 'tag-r', PARTIAL: 'tag-o' };
 const APP_STATUS_LABEL = { GOOD: '✓ Good', FAILURES: '⚠ Failures', UNCOVERED: '⚠ Uncovered', PARTIAL: '⚡ Partial' };
@@ -180,7 +182,27 @@ export default function CoveragePage() {
                                     <td style={{ textAlign: 'center', fontWeight: 'bold', color: ep.failedCount > 0 ? 'var(--red)' : 'var(--text-dim)' }}>{ep.failedCount}</td>
                                     <td style={{ textAlign: 'center', color: ep.status === 'NO_TESTS' ? 'var(--text-dim)' : ep.hasFlow ? 'var(--accent)' : 'var(--red)' }}>{ep.status === 'NO_TESTS' ? '—' : ep.hasFlow ? '✓' : '✗'}</td>
                                     <td style={{ textAlign: 'center', color: ep.status === 'NO_TESTS' ? 'var(--text-dim)' : ep.hasTestData ? 'var(--accent)' : 'var(--red)' }}>{ep.status === 'NO_TESTS' ? '—' : ep.hasTestData ? '✓' : '✗'}</td>
-                                    <td style={{ textAlign: 'center' }}><span className={`tag ${EP_STATUS_TAG[ep.status] || ''}`}>{EP_STATUS_LABEL[ep.status] || ep.status}</span></td>
+                                    <td style={{ textAlign: 'center' }}>
+                                      {ep.status === 'PARTIAL' && ep.missingDataScenarioIds?.length > 0 ? (
+                                        <>
+                                          <RoleGate roles={EDIT_ROLES}>
+                                            <button
+                                              className="btn btn-primary btn-sm"
+                                              onClick={() => navigate('/testdata', {
+                                                state: { applicationId: app.applicationId, scenarioId: ep.missingDataScenarioIds[0] }
+                                              })}
+                                            >
+                                              + Create Test Data
+                                            </button>
+                                          </RoleGate>
+                                          <RoleGate roles={[ROLES.VIEWER]}>
+                                            <span className={`tag ${EP_STATUS_TAG.PARTIAL}`}>{EP_STATUS_LABEL.PARTIAL}</span>
+                                          </RoleGate>
+                                        </>
+                                      ) : (
+                                        <span className={`tag ${EP_STATUS_TAG[ep.status] || ''}`}>{EP_STATUS_LABEL[ep.status] || ep.status}</span>
+                                      )}
+                                    </td>
                                   </tr>
                                 ))}
                               </tbody>
