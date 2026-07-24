@@ -63,6 +63,20 @@ export default function TestFlowsPage() {
     });
   }, [scenarios, search]);
 
+  const getScenarioGroup = (scenario) => {
+    if (scenario?.scenarioType === 'NEGATIVE' || /negative$/i.test(scenario?.name || '')) return 'negative';
+    return 'positive';
+  };
+
+  const groupedFilteredScenarios = useMemo(() => {
+    const groups = { positive: [], negative: [] };
+    filteredScenarios.forEach((scenario) => {
+      const group = getScenarioGroup(scenario);
+      groups[group].push(scenario);
+    });
+    return groups;
+  }, [filteredScenarios]);
+
   const selectedApplication = applications.find((app) => String(app.id) === String(applicationId));
 
   const addStep = (scenario) => {
@@ -202,19 +216,45 @@ export default function TestFlowsPage() {
                 <div>No scenarios match this search.</div>
               </div>
             ) : (
-              filteredScenarios.map((scenario) => (
-                <div key={scenario.id} style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                    <div>
-                      <div style={{ fontSize: 12, fontWeight: 700 }}>{scenario.name}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 3 }}>
-                        {scenario.httpMethod} {scenario.endpoint}
+              <>
+                {groupedFilteredScenarios.positive.length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', marginBottom: 6, textTransform: 'uppercase' }}>Positive</div>
+                    {groupedFilteredScenarios.positive.map((scenario) => (
+                      <div key={scenario.id} style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 700 }}>{scenario.name}</div>
+                            <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 3 }}>
+                              {scenario.httpMethod} {scenario.endpoint}
+                            </div>
+                          </div>
+                          <button className="btn btn-ghost btn-sm" onClick={() => addStep(scenario)}>Add</button>
+                        </div>
                       </div>
-                    </div>
-                    <button className="btn btn-ghost btn-sm" onClick={() => addStep(scenario)}>Add</button>
+                    ))}
                   </div>
-                </div>
-              ))
+                )}
+
+                {groupedFilteredScenarios.negative.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)', marginBottom: 6, textTransform: 'uppercase' }}>Negative</div>
+                    {groupedFilteredScenarios.negative.map((scenario) => (
+                      <div key={scenario.id} style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 700 }}>{scenario.name}</div>
+                            <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 3 }}>
+                              {scenario.httpMethod} {scenario.endpoint}
+                            </div>
+                          </div>
+                          <button className="btn btn-ghost btn-sm" onClick={() => addStep(scenario)}>Add</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
