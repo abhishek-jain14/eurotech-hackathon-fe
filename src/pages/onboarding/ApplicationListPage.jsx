@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
   listApplications, deleteApplication, listSpecVersions, approveSpecVersion, rejectSpecVersion,
   getSpecVersionImpact
@@ -9,14 +9,15 @@ import { EDIT_ROLES, ROLES } from '../../constants/roles';
 import { useDialog } from '../../context/DialogContext';
 import { normalizeListResponse } from '../../utils/normalizeListResponse';
 import NewApplicationModal from './NewApplicationModal';
+import ApplicationSpecsPage from './ApplicationSpecsPage';
 
 export default function ApplicationListPage() {
-  const navigate = useNavigate();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reviewing, setReviewing] = useState(null); // { app, pending, impact }
-  const [showNewModal, setShowNewModal] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [newAppId, setNewAppId] = useState(null);
   const { confirm, notify } = useDialog();
 
   const load = () => {
@@ -63,9 +64,14 @@ export default function ApplicationListPage() {
   };
 
   const handleCreated = (created) => {
-    setShowNewModal(false);
+    setShowForm(false);
+    setNewAppId(created.id);
     load();
-    navigate(`/onboarding/${created.id}/specs`);
+  };
+
+  const handleSpecsDone = () => {
+    setNewAppId(null);
+    load();
   };
 
   return (
@@ -73,15 +79,17 @@ export default function ApplicationListPage() {
       <div className="card-hd">
         <span className="card-title">Onboarded Applications</span>
         <RoleGate roles={EDIT_ROLES}>
-          <button className="btn btn-primary btn-sm" onClick={() => setShowNewModal(true)}>+ Add Application</button>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowForm((v) => !v)}>{showForm ? 'Cancel' : '+ Add Application'}</button>
         </RoleGate>
       </div>
 
-      {showNewModal && (
-        <NewApplicationModal onClose={() => setShowNewModal(false)} onCreated={handleCreated} />
-      )}
-
       {error && <div className="readonly-banner">{error}</div>}
+
+      {newAppId ? (
+        <ApplicationSpecsPage id={newAppId} onBack={handleSpecsDone} />
+      ) : showForm && (
+        <NewApplicationModal onClose={() => setShowForm(false)} onCreated={handleCreated} />
+      )}
 
       <div className="card">
         {loading ? (

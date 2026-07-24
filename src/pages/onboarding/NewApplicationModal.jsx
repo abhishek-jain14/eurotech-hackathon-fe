@@ -23,7 +23,8 @@ export default function NewApplicationModal({ onClose, onCreated }) {
     if (projects.length && !projectId) setProjectId(String(projects[0].id));
   }, [projects, projectId]);
 
-  const handleCreate = async () => {
+  const handleCreate = async (e) => {
+    e.preventDefault();
     if (!name.trim()) { setError('Application Name is required'); return; }
     if (!projectId) { setError('Select a project first'); return; }
     setError(null);
@@ -49,48 +50,47 @@ export default function NewApplicationModal({ onClose, onCreated }) {
   };
 
   return (
-    <div className="dialog-overlay" onClick={onClose}>
-      <div className="dialog-card" style={{ width: 'min(400px, 100%)' }} onClick={(e) => e.stopPropagation()}>
-        <div className="dialog-title">New Application</div>
-        <div className="dialog-message">Just the application's identity for now — you'll upload its first spec version right after.</div>
+    <form className="card" onSubmit={handleCreate}>
+      <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 14 }}>
+        Just the application's identity for now — you'll upload its first spec version right after.
+      </div>
 
-        <div className="fld">
-          <label>Project *</label>
-          <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-            {projects.length === 0 && <option value="">No projects yet — create one first</option>}
-            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </div>
+      <div className="fld">
+        <label>Project *</label>
+        <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+          {projects.length === 0 && <option value="">No projects yet — create one first</option>}
+          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </div>
 
-        <div className="fld">
-          <label>Application Name *</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. PaymentAPI" />
-        </div>
+      <div className="fld">
+        <label>Application Name *</label>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. PaymentAPI" />
+      </div>
 
-        <div className="fld">
-          <label>Type</label>
-          <div className="type-tile-row">
-            {APP_TYPES.map((t) => (
-              <div
-                key={t.value}
-                className={`type-tile ${applicationType === t.value ? 'active' : ''}`}
-                onClick={() => setApplicationType(t.value)}
-              >
-                {t.label}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {error && <div className="login-error">{error}</div>}
-
-        <div className="dialog-actions">
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleCreate} disabled={submitting || !projectId}>
-            {submitting ? 'Creating…' : 'Create Application'}
-          </button>
+      <div className="fld">
+        <label>Type</label>
+        <div className="type-tile-row">
+          {APP_TYPES.map((t) => (
+            <div
+              key={t.value}
+              className={`type-tile ${applicationType === t.value ? 'active' : ''}`}
+              onClick={() => setApplicationType(t.value)}
+            >
+              {t.label}
+            </div>
+          ))}
         </div>
       </div>
-    </div>
+
+      {error && <div className="login-error">{error}</div>}
+
+      <div className="form-ft">
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" type="submit" disabled={submitting || !projectId}>
+          {submitting ? 'Creating…' : 'Create Application'}
+        </button>
+      </div>
+    </form>
   );
 }

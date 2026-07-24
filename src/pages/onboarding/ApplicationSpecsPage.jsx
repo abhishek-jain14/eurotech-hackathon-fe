@@ -25,8 +25,9 @@ const formatTimestamp = (value) => {
     : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 };
 
-export default function ApplicationSpecsPage() {
-  const { id } = useParams();
+export default function ApplicationSpecsPage({ id: idProp, onBack }) {
+  const { id: idParam } = useParams();
+  const id = idProp ?? idParam;
   const navigate = useNavigate();
   const [app, setApp] = useState(null);
   const [url, setUrl] = useState('');
@@ -152,7 +153,7 @@ export default function ApplicationSpecsPage() {
           Upload Spec
           <input type="file" accept=".yaml,.yml,.json" onChange={handleUpload} style={{ display: 'none' }} />
         </label>
-        <button style={{ marginLeft: 10 }} className="btn btn-ghost" onClick={() => navigate('/onboarding')}>Back</button>
+        <button style={{ marginLeft: 10 }} className="btn btn-ghost" onClick={() => (onBack ? onBack() : navigate('/onboarding'))}>Back</button>
       </div>
 
       <div className="card-hd" style={{ padding: '8px 0' }}><span className="card-title" style={{ fontSize: 13 }}>Versions</span></div>
