@@ -42,10 +42,15 @@ const renderFieldRows = (fields, values, setValues) => fields.map((f) => (
   </div>
 ));
 
-// Purely decorative and local-only, shared between the AI Prompt and Single Entry panels -
-// nothing here is ever serialized or sent to the backend, there is no such endpoint yet.
-function ValidationFieldsSection() {
-  const [rows, setRows] = useState([]);
+// Shared between the AI Prompt panel (still fully decorative/preview-only, no props passed)
+// and the Single Entry form (controlled via rows/onChange - "Response Data" rows are folded
+// into TestData.responseFields and asserted against the actual response at execution time;
+// "Database" is left as a preview-only option since no backend DB-check support exists yet).
+function ValidationFieldsSection({ rows: controlledRows, onChange }) {
+  const isControlled = controlledRows !== undefined;
+  const [localRows, setLocalRows] = useState([]);
+  const rows = isControlled ? controlledRows : localRows;
+  const setRows = isControlled ? onChange : setLocalRows;
 
   const addRow = () => setRows((r) => [...r, { id: `${Date.now()}-${r.length}`, source: 'Response Data', field: '', expected: '' }]);
   const updateRow = (id, patch) => setRows((r) => r.map((row) => (row.id === id ? { ...row, ...patch } : row)));
@@ -54,6 +59,7 @@ function ValidationFieldsSection() {
   return (
     <div className="td-validate-section">
       <div className="td-section-label-dim">Validate Response / Database</div>
+      {isControlled && <div className="td-dim-text">"Response Data" rows are saved as expected response fields and checked against the real response at execution time. "Database" checks aren't supported yet — those rows are preview-only.</div>}
       {rows.map((row) => (
         <div className="td-validate-row" key={row.id}>
           <select value={row.source} onChange={(e) => updateRow(row.id, { source: e.target.value })}>
@@ -180,6 +186,15 @@ export default function TestDataForm({ applicationId, applications = [], scenari
   const [pathQueryValues, setPathQueryValues] = useState({});
   const [requestBodyText, setRequestBodyText] = useState('');
 
+  const [serviceName, setServiceName] = useState('');
+  const [endPoint, setEndPoint] = useState('');
+  const [environment, setEnvironment] = useState('');
+  const [httpStatusCode, setHttpStatusCode] = useState('');
+  const [errorCode, setErrorCode] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [responseJsonText, setResponseJsonText] = useState('');
+  const [responseFieldRows, setResponseFieldRows] = useState([]);
+
   const [bulkScenarioId, setBulkScenarioId] = useState('');
   const [file, setFile] = useState(null);
   const [schema, setSchema] = useState('Auto-detect');
@@ -213,6 +228,14 @@ export default function TestDataForm({ applicationId, applications = [], scenari
     setHeaderValues({});
     setPathQueryValues({});
     setRequestBodyText('');
+    setServiceName('');
+    setEndPoint('');
+    setEnvironment('');
+    setHttpStatusCode('');
+    setErrorCode('');
+    setErrorMsg('');
+    setResponseJsonText('');
+    setResponseFieldRows([]);
     setError(null);
   };
 
@@ -235,18 +258,40 @@ export default function TestDataForm({ applicationId, applications = [], scenari
           return;
         }
       }
+      if (responseJsonText.trim()) {
+        try {
+          JSON.parse(responseJsonText);
+        } catch {
+          setError('Expected Response Body must be valid JSON');
+          setSaving(false);
+          return;
+        }
+      }
       const fieldsJson = JSON.stringify({
         headers: headerValues,
         pathParams: pathQueryValues,
         ...(requestBodyValue !== undefined ? { requestBody: requestBodyValue } : {})
       });
+      const responseFieldsObj = Object.fromEntries(
+        responseFieldRows
+          .filter((row) => row.source === 'Response Data' && row.field.trim())
+          .map((row) => [row.field.trim(), row.expected])
+      );
       await createTestData({
         applicationId: Number(applicationId),
         scenarioId: selectedScenario.id,
         recordName,
         mode: 'MANUAL',
         status,
-        fieldsJson
+        fieldsJson,
+        serviceName: serviceName.trim() || undefined,
+        endPoint: endPoint.trim() || undefined,
+        environment: environment.trim() || undefined,
+        httpStatusCode: httpStatusCode.trim() ? Number(httpStatusCode) : undefined,
+        errorCode: errorCode.trim() || undefined,
+        errorMsg: errorMsg.trim() || undefined,
+        responseFields: Object.keys(responseFieldsObj).length ? JSON.stringify(responseFieldsObj) : undefined,
+        responseJson: responseJsonText.trim() || undefined
       });
       onSaved(true);
     } catch (err) {
@@ -373,10 +418,28 @@ export default function TestDataForm({ applicationId, applications = [], scenari
                     <textarea rows={4} value={requestBodyText} onChange={(e) => setRequestBodyText(e.target.value)} placeholder="{}" />
                   </div>
                 )}
+
+                <div className="td-section-label-dim">Expected Outcome</div>
+                <div className="td-two-col">
+                  <div className="fld"><label>Service Name</label><input value={serviceName} onChange={(e) => setServiceName(e.target.value)} placeholder="(optional label)" /></div>
+                  <div className="fld"><label>Endpoint</label><input value={endPoint} onChange={(e) => setEndPoint(e.target.value)} placeholder="(optional label)" /></div>
+                </div>
+                <div className="td-two-col">
+                  <div className="fld"><label>Environment</label><input value={environment} onChange={(e) => setEnvironment(e.target.value)} placeholder="e.g. Dev, Staging" /></div>
+                  <div className="fld"><label>Expected HTTP Status Code</label><input type="number" min="100" max="599" value={httpStatusCode} onChange={(e) => setHttpStatusCode(e.target.value)} placeholder="e.g. 200" /></div>
+                </div>
+                <div className="td-two-col">
+                  <div className="fld"><label>Expected Error Code</label><input value={errorCode} onChange={(e) => setErrorCode(e.target.value)} placeholder="(negative scenarios only)" /></div>
+                  <div className="fld"><label>Expected Error Message</label><input value={errorMsg} onChange={(e) => setErrorMsg(e.target.value)} placeholder="(negative scenarios only)" /></div>
+                </div>
+                <div className="fld">
+                  <label>Expected Response Body (JSON)</label>
+                  <textarea rows={4} className="td-json-textarea" value={responseJsonText} onChange={(e) => setResponseJsonText(e.target.value)} placeholder='{"status": "ok"}' />
+                </div>
               </>
             )}
 
-            <ValidationFieldsSection />
+            <ValidationFieldsSection rows={responseFieldRows} onChange={setResponseFieldRows} />
           </form>
         )}
 
@@ -429,6 +492,10 @@ export default function TestDataForm({ applicationId, applications = [], scenari
                   <option>Error</option>
                 </select>
               </div>
+            </div>
+
+            <div className="td-dim-text">
+              Columns named serviceName, endPoint, environment, httpStatusCode, errorCode, errorMsg, responseFields or responseJson are recognized as the expected-outcome fields (case-insensitive); every other column becomes a request field.
             </div>
 
             <div className="td-info-banner">✓ AI validates field names against your schema and flags mismatches before importing.</div>

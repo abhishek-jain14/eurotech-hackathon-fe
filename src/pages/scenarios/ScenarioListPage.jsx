@@ -378,6 +378,7 @@ export default function ScenarioListPage() {
             {showForm ? (
               <ScenarioForm
                 applicationId={applicationId}
+                applicationName={activeApplicationName}
                 projectId={selectedApplication?.projectId}
                 endpoints={endpoints}
                 endpointsLoading={endpointsLoading}

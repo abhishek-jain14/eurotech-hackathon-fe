@@ -1,22 +1,12 @@
 import { useEffect, useState } from 'react';
 import { listSpecVersions, generateScenariosForSpecVersion } from '../../api/applicationApi';
 import { createScenario, updateScenario } from '../../api/scenarioApi';
+import { listTestDataByApplication } from '../../api/testDataApi';
 import { useProjectCache } from '../../context/ProjectCacheContext';
+import { buildGherkinLines } from './gherkinPreview';
 
 const EMPTY_FORM = { name: '', httpMethod: 'GET', endpoint: '', scenarioType: 'POSITIVE', source: 'MANUAL', riskLevel: 'MEDIUM', description: '' };
-const EMPTY_API_TEST_DATA = {
-  endpoint: null,
-  headersEnabled: false,
-  headers: [], // [{name,value}]
-  pathParamsEnabled: false,
-  pathOrQueryParams: {},
-  requestBodyEnabled: false,
-  requestBodyValues: '', // JSON string for simplicity
-  requestBodySchema: null,
-  expectedStatusCode: 200,
-  expectedResponseBody: '',
-  active: true
-};
+const EMPTY_API_TEST_DATA = { endpoint: null, expectedStatusCode: 200, active: true };
 
 const GENERATION_OPTIONS = [
   { value: 'POSITIVE', label: 'Positive only' },
@@ -24,27 +14,65 @@ const GENERATION_OPTIONS = [
   { value: 'POSITIVE_NEGATIVE', label: 'Positive + Negative' }
 ];
 
-// Helper to generate request body from endpoint schema
-const generateRequestBodyFromSchema = (schema) => {
-  if (!schema || !schema.properties) return null;
-  const result = {};
-  Object.entries(schema.properties).forEach(([key, prop]) => {
-    const type = prop.type;
-    if (type === 'string') result[key] = `<${key}_string>`;
-    else if (type === 'integer') result[key] = `<${key}_integer>`;
-    else if (type === 'number') result[key] = `<${key}_number>`;
-    else if (type === 'boolean') result[key] = `<${key}_boolean>`;
-    else result[key] = `<${key}_${type}>`;
+// Expected-status choices offered per scenario type, mirroring the reference mockup.
+const STATUS_OPTIONS = {
+  POSITIVE: ['200 OK', '201 Created', '202 Accepted', '204 No Content'],
+  NEGATIVE: ['400 Bad Request', '401 Unauthorized', '403 Forbidden', '404 Not Found', '409 Conflict', '422 Unprocessable Entity', '429 Too Many Requests']
+};
+const statusOptionsFor = (type) => STATUS_OPTIONS[type] || STATUS_OPTIONS.POSITIVE;
+const statusLabelFor = (code, type) => statusOptionsFor(type).find((o) => o.startsWith(String(code))) || '';
+
+// One checkbox-able list combining header/path/query parameters and request body properties,
+// instead of three separately-toggled sections - each row remembers where its value belongs
+// so submit can still route it into the right apiTestData bucket.
+const buildFieldRows = (headerFields, pathQueryFields, bodySchema) => {
+  const rows = [];
+  headerFields.forEach((f) => rows.push({ key: `header:${f.name}`, name: f.name, type: f.type || 'string', required: !!f.required, location: 'header' }));
+  pathQueryFields.forEach((f) => rows.push({ key: `pathQuery:${f.name}`, name: f.name, type: f.type || 'string', required: !!f.required, location: 'pathQuery' }));
+  if (bodySchema?.properties) {
+    const required = new Set(bodySchema.required || []);
+    Object.entries(bodySchema.properties).forEach(([name, prop]) => {
+      rows.push({ key: `body:${name}`, name, type: prop?.type || 'string', required: required.has(name), location: 'body' });
+    });
+  }
+  return rows;
+};
+const requiredKeys = (rows) => new Set(rows.filter((r) => r.required).map((r) => r.key));
+
+// No backend field exists for structured response validations, so rows are folded into the
+// existing expectedResponseBody string using a small readable grammar, and parsed back out
+// when editing. Anything that doesn't match the grammar (e.g. legacy free text) survives as
+// a single Response JSON row rather than being silently dropped.
+const VALIDATION_DB_RE = /^database\s+(\S+)\.(\S+)\s+equals\s+<.+>$/i;
+const VALIDATION_FIELD_RE = /^(\S+)\s+equals\s+<.+>$/i;
+
+const parseValidationRows = (text) => {
+  if (!text) return [];
+  return text.split('\n').map((l) => l.trim()).filter(Boolean).map((line) => {
+    const db = line.match(VALIDATION_DB_RE);
+    if (db) return { id: crypto.randomUUID(), source: 'Database', field: '', table: db[1], column: db[2] };
+    const f = line.match(VALIDATION_FIELD_RE);
+    if (f) return { id: crypto.randomUUID(), source: 'Response JSON', field: f[1], table: '', column: '' };
+    return { id: crypto.randomUUID(), source: 'Response JSON', field: line, table: '', column: '' };
   });
-  return result;
 };
 
-export default function ScenarioForm({ applicationId, projectId, endpoints, endpointsLoading, endpointsError, editingScenario, onSaved, onClose }) {
+const serializeValidationRows = (rows) => rows
+  .filter((r) => (r.source === 'Database' ? r.table && r.column : r.field))
+  .map((r) => (r.source === 'Database' ? `database ${r.table}.${r.column} equals <${r.column}>` : `${r.field} equals <${r.field}>`))
+  .join('\n');
+
+const newValidationRow = () => ({ id: crypto.randomUUID(), source: 'Response JSON', field: '', table: '', column: '' });
+
+export default function ScenarioForm({ applicationId, applicationName, projectId, endpoints, endpointsLoading, endpointsError, editingScenario, onSaved, onClose }) {
   const isEdit = !!editingScenario;
   const [mode, setMode] = useState(isEdit ? 'manual' : null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [apiTestData, setApiTestData] = useState(EMPTY_API_TEST_DATA);
-  const [endpointFields, setEndpointFields] = useState({ header: [], pathQuery: [] });
+  const [fieldRows, setFieldRows] = useState([]);
+  const [includedKeys, setIncludedKeys] = useState(new Set());
+  const [validationRows, setValidationRows] = useState([newValidationRow()]);
+  const [gherkinLines, setGherkinLines] = useState(null);
   const [jiraTicketKey, setJiraTicketKey] = useState('');
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -60,8 +88,19 @@ export default function ScenarioForm({ applicationId, projectId, endpoints, endp
   const [genMessage, setGenMessage] = useState(null);
   const [genError, setGenError] = useState(null);
 
+  // Decorative only - there's no scenario<->dataset link on the backend yet (see the
+  // Test Data tab's own "linking isn't available for scenarios yet" message), so this
+  // just previews existing dataset names and is never sent in the save payload.
+  const [testDatasets, setTestDatasets] = useState([]);
+  const [linkedDataset, setLinkedDataset] = useState('');
+  useEffect(() => {
+    if (!applicationId) { setTestDatasets([]); return; }
+    listTestDataByApplication(applicationId, { size: 100 }).then((page) => setTestDatasets(page.content || [])).catch(() => setTestDatasets([]));
+  }, [applicationId]);
+
   useEffect(() => {
     setError(null);
+    setGherkinLines(null);
     if (editingScenario) {
       setMode('manual');
       setForm({
@@ -76,36 +115,41 @@ export default function ScenarioForm({ applicationId, projectId, endpoints, endp
       const atd = editingScenario.apiTestData || {};
       const headersObj = atd.headers && typeof atd.headers === 'object' ? atd.headers : {};
       const paramsObj = atd.pathOrQueryParams && typeof atd.pathOrQueryParams === 'object' ? atd.pathOrQueryParams : {};
+      const bodyObj = atd.requestBodyValues && typeof atd.requestBodyValues === 'object' ? atd.requestBodyValues : {};
       setApiTestData({
         endpoint: atd.endpoint || (editingScenario.endpoint ? { path: editingScenario.endpoint, httpMethod: editingScenario.httpMethod, summary: '' } : null),
-        headersEnabled: Object.keys(headersObj).length > 0,
-        headers: Object.entries(headersObj).map(([name, value]) => ({ name, value })),
-        pathParamsEnabled: Object.keys(paramsObj).length > 0,
-        pathOrQueryParams: paramsObj,
-        requestBodyEnabled: !!atd.requestBodyValues,
-        requestBodyValues: atd.requestBodyValues ? JSON.stringify(atd.requestBodyValues, null, 2) : '',
-        requestBodySchema: null,
         expectedStatusCode: atd.expectedStatusCode ?? 200,
-        expectedResponseBody: atd.expectedResponseBody || '',
         active: editingScenario.active !== undefined ? editingScenario.active : true
       });
-      // Re-detect header/path/query fields from the matching endpoint spec so the
-      // checklist still reflects what the endpoint actually supports.
+      const parsedValidations = parseValidationRows(atd.expectedResponseBody);
+      setValidationRows(parsedValidations.length ? parsedValidations : [newValidationRow()]);
+
+      // Re-detect fields from the matching endpoint spec so the checklist still reflects
+      // what the endpoint actually supports, then pre-check whichever optional fields this
+      // scenario already had a value for.
       const match = (endpoints || []).find((ep) => (ep.path || ep.endpoint) === editingScenario.endpoint && (ep.httpMethod || 'GET') === editingScenario.httpMethod);
-      if (match) {
-        const parameters = Array.isArray(match.parameters) ? match.parameters : [];
-        setEndpointFields({
-          header: parameters.filter((p) => (p?.in || '').toLowerCase() === 'header'),
-          pathQuery: parameters.filter((p) => { const loc = (p?.in || '').toLowerCase(); return loc === 'path' || loc === 'query' || !loc; })
-        });
-      } else {
-        setEndpointFields({ header: [], pathQuery: [] });
-      }
+      const parameters = match ? (Array.isArray(match.parameters) ? match.parameters : []) : [];
+      const headerFields = parameters.filter((p) => (p?.in || '').toLowerCase() === 'header');
+      const pathQueryFields = parameters.filter((p) => { const loc = (p?.in || '').toLowerCase(); return loc === 'path' || loc === 'query' || !loc; });
+      const rows = buildFieldRows(headerFields, pathQueryFields, match?.requestBody);
+      setFieldRows(rows);
+      const included = requiredKeys(rows);
+      rows.forEach((r) => {
+        if (included.has(r.key)) return;
+        const present = r.location === 'header' ? Object.prototype.hasOwnProperty.call(headersObj, r.name)
+          : r.location === 'pathQuery' ? Object.prototype.hasOwnProperty.call(paramsObj, r.name)
+          : Object.prototype.hasOwnProperty.call(bodyObj, r.name);
+        if (present) included.add(r.key);
+      });
+      setIncludedKeys(included);
     } else {
       setMode(null);
       setForm(EMPTY_FORM);
       setApiTestData(EMPTY_API_TEST_DATA);
-      setEndpointFields({ header: [], pathQuery: [] });
+      setFieldRows([]);
+      setIncludedKeys(new Set());
+      setValidationRows([newValidationRow()]);
+      setLinkedDataset('');
       setJiraTicketKey('');
     }
   }, [editingScenario, endpoints]);
@@ -134,21 +178,40 @@ export default function ScenarioForm({ applicationId, projectId, endpoints, endp
   const handleEndpointPick = (ep) => {
     const method = ep.httpMethod || 'GET';
     const path = ep.path || ep.endpoint || '';
-    update('httpMethod', method);
-    update('endpoint', path);
+    setForm((f) => ({ ...f, httpMethod: method, endpoint: path, name: f.name.trim() ? f.name : `${method} ${path} — valid request` }));
 
     const parameters = Array.isArray(ep.parameters) ? ep.parameters : [];
     const headerFields = parameters.filter((p) => (p?.in || '').toLowerCase() === 'header');
     const pathQueryFields = parameters.filter((p) => { const loc = (p?.in || '').toLowerCase(); return loc === 'path' || loc === 'query' || !loc; });
-    setEndpointFields({ header: headerFields, pathQuery: pathQueryFields });
+    const rows = buildFieldRows(headerFields, pathQueryFields, ep.requestBody);
+    setFieldRows(rows);
+    setIncludedKeys(requiredKeys(rows));
+    setGherkinLines(null);
 
-    setApiTestData((s) => ({
-      ...s,
-      endpoint: { path, httpMethod: method, summary: ep.summary || '', requestBody: ep.requestBody || null },
-      headers: [],
-      pathOrQueryParams: {}
-    }));
+    setApiTestData((s) => ({ ...s, endpoint: { path, httpMethod: method, summary: ep.summary || '', requestBody: ep.requestBody || null } }));
   };
+
+  const toggleField = (row) => {
+    if (row.required) return; // mandatory, locked
+    setIncludedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(row.key)) next.delete(row.key); else next.add(row.key);
+      return next;
+    });
+  };
+
+  const handleTypeChange = (type) => {
+    setForm((f) => ({ ...f, scenarioType: type }));
+    setApiTestData((s) => {
+      if (statusLabelFor(s.expectedStatusCode, type)) return s; // still valid for the new type
+      return { ...s, expectedStatusCode: parseInt(statusOptionsFor(type)[0], 10) };
+    });
+  };
+
+  const updateValidationRow = (id, patch) => setValidationRows((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const setValidationSource = (id, source) => updateValidationRow(id, { source, field: '', table: '', column: '' });
+  const addValidationRow = () => setValidationRows((rows) => [...rows, newValidationRow()]);
+  const removeValidationRow = (id) => setValidationRows((rows) => rows.filter((r) => r.id !== id));
 
   const handleGenerate = async () => {
     if (!currentVersion) return;
@@ -167,28 +230,35 @@ export default function ScenarioForm({ applicationId, projectId, endpoints, endp
     }
   };
 
+  // Shared by the Gherkin preview and the real save payload so they can never diverge.
+  const buildDraftApiTestData = () => {
+    const headersObj = {}; const pathOrQueryParamsObj = {}; const requestBodyValuesObj = {};
+    fieldRows.forEach((f) => {
+      if (!includedKeys.has(f.key)) return;
+      const val = `<${f.name}>`;
+      if (f.location === 'header') headersObj[f.name] = val;
+      else if (f.location === 'pathQuery') pathOrQueryParamsObj[f.name] = val;
+      else requestBodyValuesObj[f.name] = val;
+    });
+    return {
+      endpoint: apiTestData.endpoint || { path: form.endpoint, httpMethod: form.httpMethod, summary: '' },
+      headers: Object.keys(headersObj).length ? headersObj : undefined,
+      pathOrQueryParams: Object.keys(pathOrQueryParamsObj).length ? pathOrQueryParamsObj : undefined,
+      requestBodyValues: Object.keys(requestBodyValuesObj).length ? requestBodyValuesObj : undefined,
+      expectedStatusCode: Number(apiTestData.expectedStatusCode),
+      expectedResponseBody: serializeValidationRows(validationRows)
+    };
+  };
+
+  const handleGenerateGherkin = () => {
+    setGherkinLines(buildGherkinLines({ name: form.name, httpMethod: form.httpMethod, endpoint: form.endpoint, apiTestData: buildDraftApiTestData() }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
     setSaving(true);
     try {
-      const headersObj = apiTestData.headersEnabled
-        ? apiTestData.headers.reduce((acc, h) => { if (h.name) acc[h.name] = h.value; return acc; }, {})
-        : undefined;
-
-      let requestBodyValuesObj;
-      if (apiTestData.requestBodyEnabled && apiTestData.requestBodyValues) {
-        try {
-          requestBodyValuesObj = JSON.parse(apiTestData.requestBodyValues);
-        } catch (err) {
-          setError('Invalid JSON in Request Body values');
-          setSaving(false);
-          return;
-        }
-      }
-
-      const pathOrQueryParamsObj = apiTestData.pathParamsEnabled ? apiTestData.pathOrQueryParams : undefined;
-
       const ticketKey = jiraTicketKey.trim();
       const name = mode === 'jira' && ticketKey && !form.name.startsWith(ticketKey) ? `${ticketKey} ${form.name}` : form.name;
 
@@ -202,14 +272,7 @@ export default function ScenarioForm({ applicationId, projectId, endpoints, endp
         riskLevel: form.riskLevel,
         description: form.description,
         active: apiTestData.active,
-        apiTestData: {
-          endpoint: apiTestData.endpoint || { path: form.endpoint, httpMethod: form.httpMethod, summary: '' },
-          headers: headersObj,
-          pathOrQueryParams: apiTestData.pathParamsEnabled ? pathOrQueryParamsObj : undefined,
-          requestBodyValues: requestBodyValuesObj,
-          expectedStatusCode: Number(apiTestData.expectedStatusCode),
-          expectedResponseBody: apiTestData.expectedResponseBody
-        }
+        apiTestData: buildDraftApiTestData()
       };
 
       if (!payload.apiTestData.headers) delete payload.apiTestData.headers;
@@ -231,6 +294,7 @@ export default function ScenarioForm({ applicationId, projectId, endpoints, endp
   };
 
   const title = isEdit ? 'Edit Scenario' : mode === 'ai' ? 'Generate with AI' : mode === 'manual' ? 'Add Scenario — Manual Entry' : mode === 'jira' ? 'Add Scenario — From Jira' : 'Add Scenario';
+  const selectedEndpointIndex = endpoints.findIndex((ep) => (ep.httpMethod || 'GET') === form.httpMethod && (ep.path || ep.endpoint) === form.endpoint);
 
   return (
     <div className="sc-form-overlay open">
@@ -325,201 +389,114 @@ export default function ScenarioForm({ applicationId, projectId, endpoints, endp
               </div>
             )}
 
-            {applicationId && (
-              <div style={{ marginBottom: 14 }}>
-                {endpointsLoading && <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>Loading endpoints…</div>}
-                {endpointsError && <div className="readonly-banner" style={{ marginBottom: 10 }}>{endpointsError}</div>}
-                {!endpointsLoading && endpoints.length > 0 && (
-                  <div className="fld">
-                    <label>Available Endpoints — click to fill in</label>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      {endpoints.map((ep, idx) => (
-                        <div
-                          key={idx}
-                          className="sc-ep-chip"
-                          onClick={() => handleEndpointPick(ep)}
-                        >
-                          <strong>{ep.httpMethod || 'GET'}</strong> {ep.path || ep.endpoint || '—'}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {!endpointsLoading && endpoints.length === 0 && !endpointsError && (
-                  <div style={{ fontSize: 12, color: 'var(--text-dim)', fontStyle: 'italic' }}>No endpoints available for this application.</div>
-                )}
+            <div className="sc-row2">
+              <div className="fld">
+                <label>Application</label>
+                <select value={applicationId} disabled><option>{applicationName || '—'}</option></select>
+              </div>
+              <div className="fld">
+                <label>Endpoint</label>
+                <select
+                  value={selectedEndpointIndex}
+                  disabled={endpointsLoading || endpoints.length === 0}
+                  onChange={(e) => { const idx = Number(e.target.value); if (idx >= 0) handleEndpointPick(endpoints[idx]); }}
+                >
+                  <option value={-1}>{endpointsLoading ? 'Loading endpoints…' : endpoints.length === 0 ? 'No endpoints available' : '-- Select endpoint --'}</option>
+                  {endpoints.map((ep, idx) => <option key={idx} value={idx}>{ep.httpMethod || 'GET'} {ep.path || ep.endpoint || '—'}</option>)}
+                </select>
+              </div>
+            </div>
+            {endpointsError && <div className="readonly-banner" style={{ marginBottom: 10 }}>{endpointsError}</div>}
+            {!endpointsLoading && endpoints.length === 0 && (
+              <div className="sc-row2">
+                <div className="fld"><label>Method (custom)</label>
+                  <select value={form.httpMethod} onChange={(e) => update('httpMethod', e.target.value)}>
+                    {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => <option key={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div className="fld"><label>Endpoint (custom)</label><input value={form.endpoint} onChange={(e) => update('endpoint', e.target.value)} placeholder="/payments/charge" /></div>
               </div>
             )}
 
-            <div className="fld"><label>Name *</label><input required value={form.name} onChange={(e) => update('name', e.target.value)} /></div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
-              <div className="fld"><label>Method</label>
-                <select value={form.httpMethod} onChange={(e) => update('httpMethod', e.target.value)}>
-                  {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => <option key={m}>{m}</option>)}
-                </select>
-              </div>
-              <div className="fld"><label>Endpoint</label><input value={form.endpoint} onChange={(e) => update('endpoint', e.target.value)} placeholder="/payments/charge" /></div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+            <div className="fld"><label>Scenario Name *</label><input required value={form.name} onChange={(e) => update('name', e.target.value)} placeholder="e.g. Payment with invalid CVV" /></div>
+
+            <div className="sc-row3">
               <div className="fld"><label>Type</label>
-                <select value={form.scenarioType} onChange={(e) => update('scenarioType', e.target.value)}>
+                <select value={form.scenarioType} onChange={(e) => handleTypeChange(e.target.value)}>
                   <option value="POSITIVE">Positive</option><option value="NEGATIVE">Negative</option>
                 </select>
               </div>
-              <div className="fld"><label>Source</label>
-                <select value={form.source} disabled={mode === 'jira'} onChange={(e) => update('source', e.target.value)}>
-                  <option value="AI">AI</option><option value="MANUAL">Manual</option><option value="JIRA">Jira</option>
+              <div className="fld"><label>Expected Status</label>
+                <select value={statusLabelFor(apiTestData.expectedStatusCode, form.scenarioType)} onChange={(e) => setApiTestData((s) => ({ ...s, expectedStatusCode: parseInt(e.target.value, 10) }))}>
+                  {statusOptionsFor(form.scenarioType).map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
               </div>
-              <div className="fld"><label>Risk</label>
+              <div className="fld"><label>Risk Level</label>
                 <select value={form.riskLevel} onChange={(e) => update('riskLevel', e.target.value)}>
-                  <option value="LOW">Low</option><option value="MEDIUM">Medium</option><option value="HIGH">High</option>
+                  <option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option>
                 </select>
               </div>
             </div>
-            <div className="fld"><label>Description</label><textarea rows={2} value={form.description} onChange={(e) => update('description', e.target.value)} /></div>
 
-            <div className="fld" style={{ marginTop: 6 }}>
-              <label style={{ marginBottom: 8 }}>Request Fields</label>
+            <div className="fld"><label>Description</label><textarea rows={3} value={form.description} onChange={(e) => update('description', e.target.value)} placeholder="What does this test verify?" /></div>
 
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ textTransform: 'none', letterSpacing: 0, fontSize: 12, color: 'var(--text)' }}>
-                  <input type="checkbox" checked={apiTestData.headersEnabled} onChange={(e) => setApiTestData((s) => ({ ...s, headersEnabled: e.target.checked }))} /> Enable Headers
-                </label>
-                {apiTestData.headersEnabled && (
-                  <div style={{ marginTop: 8 }}>
-                    {endpointFields.header.length > 0 && (
-                      <div style={{ marginBottom: 10 }}>
-                        <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4 }}>Detected from endpoint — check to include:</div>
-                        {endpointFields.header.map((f) => {
-                          const checked = apiTestData.headers.some((h) => h.name === f.name);
-                          const current = apiTestData.headers.find((h) => h.name === f.name);
-                          return (
-                            <div key={f.name} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(e) => setApiTestData((s) => ({
-                                  ...s,
-                                  headersEnabled: true,
-                                  headers: e.target.checked
-                                    ? [...s.headers, { name: f.name, value: `<${f.name}>` }]
-                                    : s.headers.filter((h) => h.name !== f.name)
-                                }))}
-                              />
-                              <span style={{ minWidth: 140 }}>{f.name}{f.required ? ' *' : ''}</span>
-                              <span className="tag" style={{ fontSize: 10 }}>{f.type || 'string'}</span>
-                              {checked && (
-                                <input
-                                  style={{ flex: 1 }}
-                                  value={current?.value || ''}
-                                  onChange={(e) => setApiTestData((s) => ({ ...s, headers: s.headers.map((h) => h.name === f.name ? { ...h, value: e.target.value } : h) }))}
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {apiTestData.headers.filter((h) => !endpointFields.header.some((f) => f.name === h.name)).map((h) => {
-                      const i = apiTestData.headers.indexOf(h);
-                      return (
-                        <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-                          <input placeholder="Name" value={h.name} onChange={(e) => setApiTestData((s) => { const headers = [...s.headers]; headers[i] = { ...headers[i], name: e.target.value }; return { ...s, headers }; })} />
-                          <input placeholder="Value" value={h.value} onChange={(e) => setApiTestData((s) => { const headers = [...s.headers]; headers[i] = { ...headers[i], value: e.target.value }; return { ...s, headers }; })} />
-                          <button type="button" className="btn btn-ghost" onClick={() => setApiTestData((s) => ({ ...s, headers: s.headers.filter((_, idx) => idx !== i) }))}>Remove</button>
-                        </div>
-                      );
-                    })}
-                    <button type="button" className="btn btn-primary btn-sm" onClick={() => setApiTestData((s) => ({ ...s, headers: [...s.headers, { name: '', value: '' }] }))}>Add Header</button>
-                  </div>
-                )}
+            {fieldRows.length > 0 && (
+              <div className="fld">
+                <label>Request Fields <span className="sc-label-hint">· mandatory pre-selected, optional opt-in · values bound to linked dataset</span></label>
+                {fieldRows.map((f) => {
+                  const on = includedKeys.has(f.key);
+                  return (
+                    <div className="sc-field-row" key={f.key} onClick={() => toggleField(f)}>
+                      <span className={`sc-field-cb ${on ? 'on' : ''} ${f.required ? 'locked' : ''}`}>{on ? '✓' : ''}</span>
+                      <span className="sc-field-name">{f.name}</span>
+                      <span className="sc-field-type">{f.type}</span>
+                      <span className={`tag ${f.required ? 'tag-r' : ''}`}>{f.required ? 'required' : 'optional'}</span>
+                      <span className="sc-field-ph">&lt;{f.name}&gt;</span>
+                    </div>
+                  );
+                })}
               </div>
+            )}
 
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ textTransform: 'none', letterSpacing: 0, fontSize: 12, color: 'var(--text)' }}>
-                  <input type="checkbox" checked={apiTestData.pathParamsEnabled} onChange={(e) => setApiTestData((s) => ({ ...s, pathParamsEnabled: e.target.checked }))} /> Enable Path/Query Params
-                </label>
-                {apiTestData.pathParamsEnabled && (
-                  <div style={{ marginTop: 8 }}>
-                    {endpointFields.pathQuery.length > 0 ? (
-                      <div>
-                        <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4 }}>Detected from endpoint — check to include:</div>
-                        {endpointFields.pathQuery.map((f) => {
-                          const params = apiTestData.pathOrQueryParams || {};
-                          const checked = Object.prototype.hasOwnProperty.call(params, f.name);
-                          return (
-                            <div key={f.name} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(e) => setApiTestData((s) => {
-                                  const next = { ...(s.pathOrQueryParams || {}) };
-                                  if (e.target.checked) next[f.name] = `<${f.name}>`;
-                                  else delete next[f.name];
-                                  return { ...s, pathParamsEnabled: true, pathOrQueryParams: next };
-                                })}
-                              />
-                              <span style={{ minWidth: 140 }}>{f.name}{f.required ? ' *' : ''}</span>
-                              <span className="tag" style={{ fontSize: 10 }}>{f.type || 'string'}</span>
-                              {checked && (
-                                <input
-                                  style={{ flex: 1 }}
-                                  value={params[f.name] || ''}
-                                  onChange={(e) => setApiTestData((s) => ({ ...s, pathOrQueryParams: { ...s.pathOrQueryParams, [f.name]: e.target.value } }))}
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>No path/query params detected from endpoint.</div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label style={{ textTransform: 'none', letterSpacing: 0, fontSize: 12, color: 'var(--text)' }}>
-                  <input
-                    type="checkbox"
-                    checked={apiTestData.requestBodyEnabled}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        const schema = apiTestData.endpoint?.requestBody;
-                        const bodyObj = schema ? generateRequestBodyFromSchema(schema) : {};
-                        setApiTestData((s) => ({ ...s, requestBodyEnabled: true, requestBodyValues: JSON.stringify(bodyObj, null, 2), requestBodySchema: schema || null }));
-                      } else {
-                        setApiTestData((s) => ({ ...s, requestBodyEnabled: false, requestBodyValues: '', requestBodySchema: null }));
-                      }
-                    }}
-                  />
-                  Enable Request Body
-                </label>
-                {apiTestData.requestBodyEnabled && (
-                  <textarea
-                    rows={6}
-                    style={{ marginTop: 8, width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border-2)', borderRadius: 6, padding: 10, color: 'var(--text)', fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }}
-                    value={apiTestData.requestBodyValues}
-                    onChange={(e) => setApiTestData((s) => ({ ...s, requestBodyValues: e.target.value }))}
-                  />
-                )}
-              </div>
+            <div className="fld">
+              <label>Validate Response Fields <span className="sc-label-hint">· expected values bound to linked dataset</span></label>
+              {validationRows.map((row) => (
+                <div className="td-validate-row" key={row.id}>
+                  <select style={{ flex: '0 0 130px' }} value={row.source} onChange={(e) => setValidationSource(row.id, e.target.value)}>
+                    <option>Response JSON</option>
+                    <option>Database</option>
+                  </select>
+                  {row.source === 'Database' ? (
+                    <>
+                      <input placeholder="table (e.g. payments)" value={row.table} onChange={(e) => updateValidationRow(row.id, { table: e.target.value })} />
+                      <input placeholder="column (e.g. status)" value={row.column} onChange={(e) => updateValidationRow(row.id, { column: e.target.value })} />
+                    </>
+                  ) : (
+                    <input placeholder="field name (e.g. transaction_id)" value={row.field} onChange={(e) => updateValidationRow(row.id, { field: e.target.value })} />
+                  )}
+                  <button type="button" className="td-row-remove" onClick={() => removeValidationRow(row.id)}>✕</button>
+                </div>
+              ))}
+              <button type="button" className="td-add-dashed" onClick={addValidationRow}>+ Add Validation</button>
             </div>
 
-            <div className="fld" style={{ marginTop: 6 }}>
-              <label style={{ marginBottom: 8 }}>Response Fields</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10 }}>
-                <div className="fld">
-                  <label>Expected Status</label>
-                  <input type="number" value={apiTestData.expectedStatusCode} onChange={(e) => setApiTestData((s) => ({ ...s, expectedStatusCode: e.target.value }))} />
+            <div className="fld">
+              <button type="button" className="btn-purple" style={{ width: '100%', textAlign: 'center', padding: '10px 14px', borderRadius: 7 }} onClick={handleGenerateGherkin}>✦ Generate Gherkin Test Case</button>
+              {gherkinLines && (
+                <div className="sc-gherkin-box" style={{ marginTop: 10 }}>
+                  {gherkinLines.map((line, i) => (
+                    <div key={i}>{line.map((tok, j) => (tok.cls ? <span key={j} className={`sc-${tok.cls}`}>{tok.text}</span> : <span key={j}>{tok.text}</span>))}</div>
+                  ))}
                 </div>
-                <div className="fld">
-                  <label>Expected Response Body</label>
-                  <input value={apiTestData.expectedResponseBody} onChange={(e) => setApiTestData((s) => ({ ...s, expectedResponseBody: e.target.value }))} />
-                </div>
-              </div>
+              )}
+            </div>
+
+            <div className="fld">
+              <label>Link Test Dataset</label>
+              <select value={linkedDataset} onChange={(e) => setLinkedDataset(e.target.value)}>
+                <option value="">-- None --</option>
+                {testDatasets.map((d) => <option key={d.id} value={d.recordName}>{d.recordName}</option>)}
+              </select>
             </div>
           </form>
         )}

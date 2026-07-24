@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   listApplications, deleteApplication, listSpecVersions, approveSpecVersion, rejectSpecVersion,
   getSpecVersionImpact
@@ -8,12 +8,15 @@ import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES, ROLES } from '../../constants/roles';
 import { useDialog } from '../../context/DialogContext';
 import { normalizeListResponse } from '../../utils/normalizeListResponse';
+import NewApplicationModal from './NewApplicationModal';
 
 export default function ApplicationListPage() {
+  const navigate = useNavigate();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reviewing, setReviewing] = useState(null); // { app, pending, impact }
+  const [showNewModal, setShowNewModal] = useState(false);
   const { confirm, notify } = useDialog();
 
   const load = () => {
@@ -59,14 +62,24 @@ export default function ApplicationListPage() {
     load();
   };
 
+  const handleCreated = (created) => {
+    setShowNewModal(false);
+    load();
+    navigate(`/onboarding/${created.id}/specs`);
+  };
+
   return (
     <div>
       <div className="card-hd">
         <span className="card-title">Onboarded Applications</span>
         <RoleGate roles={EDIT_ROLES}>
-          <Link to="/onboarding/new" className="btn btn-primary btn-sm">+ Add Application</Link>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowNewModal(true)}>+ Add Application</button>
         </RoleGate>
       </div>
+
+      {showNewModal && (
+        <NewApplicationModal onClose={() => setShowNewModal(false)} onCreated={handleCreated} />
+      )}
 
       {error && <div className="readonly-banner">{error}</div>}
 

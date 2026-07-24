@@ -40,3 +40,15 @@ export const fieldCount = (parsed) => {
 };
 
 export const headerKeys = (parsed) => (isNonEmptyObject(parsed?.headers) ? Object.keys(parsed.headers) : []);
+
+// Generic JSON-object parse for the flat expected-value fields (responseFields) - unlike
+// fieldsJson these aren't grouped under headers/pathParams/requestBody.
+export const safeParseObject = (json) => {
+  if (!json) return {};
+  try {
+    const parsed = JSON.parse(json);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+};

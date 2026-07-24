@@ -7,6 +7,12 @@ import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
 import { normalizeListResponse } from '../../utils/normalizeListResponse';
 
+const FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'positive', label: '✔ Positive' },
+  { key: 'negative', label: '✘ Negative' }
+];
+
 export default function ExecutionPage() {
   const [applications, setApplications] = useState([]);
   const [applicationId, setApplicationId] = useState('');
@@ -15,6 +21,8 @@ export default function ExecutionPage() {
   const [scenarios, setScenarios] = useState([]);
   const [selectedScenarioIds, setSelectedScenarioIds] = useState([]);
   const [filter, setFilter] = useState('all');
+  const [endpointFilter, setEndpointFilter] = useState('all');
+  const [suiteName, setSuiteName] = useState('');
   const [runs, setRuns] = useState([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState(null);
@@ -61,7 +69,12 @@ export default function ExecutionPage() {
     if (scenarioIds.length === 0) { setError('Select at least one scenario to execute'); return; }
     setRunning(true);
     try {
-      await triggerExecution({ applicationId: Number(applicationId), environmentId: Number(environmentId), scenarioIds });
+      await triggerExecution({
+        applicationId: Number(applicationId),
+        environmentId: Number(environmentId),
+        scenarioIds,
+        suiteName: suiteName.trim() || undefined
+      });
       setSelectedScenarioIds([]);
       load();
     } catch (err) {
@@ -75,16 +88,28 @@ export default function ExecutionPage() {
     await runExecutionForIds(selectedScenarioIds);
   };
 
+  // "Run via Prompt" - selects everything matching the current type/endpoint filters and runs immediately,
+  // instead of requiring the user to select rows first.
+  const handleRunViaPrompt = async () => {
+    await runExecutionForIds(visibleScenarios.map((s) => s.id));
+  };
+
   const hasSelectedScenarios = selectedScenarioIds.length > 0;
   const getScenarioIcon = (scenario) => {
     if (scenario?.scenarioType === 'POSITIVE' || /positive$/i.test(scenario?.name || '')) return '✔';
     return '✘';
   };
+  const endpointOptions = useMemo(() => {
+    const keys = new Set(scenarios.map((s) => `${s.httpMethod || 'GET'} ${s.endpoint || ''}`));
+    return Array.from(keys).sort();
+  }, [scenarios]);
   const visibleScenarios = useMemo(() => {
-    if (filter === 'positive') return scenarios.filter((scenario) => scenario.scenarioType === 'POSITIVE');
-    if (filter === 'negative') return scenarios.filter((scenario) => scenario.scenarioType === 'NEGATIVE');
-    return scenarios;
-  }, [filter, scenarios]);
+    let list = scenarios;
+    if (filter === 'positive') list = list.filter((scenario) => scenario.scenarioType === 'POSITIVE');
+    else if (filter === 'negative') list = list.filter((scenario) => scenario.scenarioType === 'NEGATIVE');
+    if (endpointFilter !== 'all') list = list.filter((scenario) => `${scenario.httpMethod || 'GET'} ${scenario.endpoint || ''}` === endpointFilter);
+    return list;
+  }, [filter, endpointFilter, scenarios]);
   const allVisibleScenariosSelected = visibleScenarios.length > 0 && visibleScenarios.every((scenario) => selectedScenarioIds.includes(scenario.id));
 
   const toggleSelectAll = () => {
@@ -121,23 +146,37 @@ export default function ExecutionPage() {
 
       <RoleGate roles={EDIT_ROLES}>
         <div className="card">
-          <div className="card-hd"><span className="card-title">Select Scenarios</span><span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{selectedScenarioIds.length} of {scenarios.length} selected</span></div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-            {['all', 'positive', 'negative'].map((option) => (
+          <div className="card-hd"><span className="card-title">Run via Prompt</span></div>
+          <div className="sc-row3" style={{ marginBottom: 10 }}>
+            <div className="fld" style={{ marginBottom: 0 }}>
+              <label>Endpoint</label>
+              <select value={endpointFilter} onChange={(e) => setEndpointFilter(e.target.value)} disabled={!hasSpecificApplication}>
+                <option value="all">All Endpoints</option>
+                {endpointOptions.map((ep) => <option key={ep} value={ep}>{ep}</option>)}
+              </select>
+            </div>
+            <div className="fld" style={{ marginBottom: 0 }}>
+              <label>Run Name <span className="sc-label-hint">(optional)</span></label>
+              <input value={suiteName} onChange={(e) => setSuiteName(e.target.value)} placeholder="e.g. Nightly Smoke Run" />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
               <button
-                key={option}
-                className={`btn btn-sm ${filter === option ? 'btn-primary' : 'btn-ghost'}`}
-                onClick={() => setFilter(option)}
-                style={{
-                  padding: '4px 8px',
-                  fontSize: 11,
-                  color: filter === option && option === 'positive' ? '#16a34a' : filter === option && option === 'negative' ? '#dc2626' : undefined,
-                  borderColor: filter === option && option === 'positive' ? '#16a34a' : filter === option && option === 'negative' ? '#dc2626' : undefined,
-                  backgroundColor: filter === option && option === 'positive' ? '#dcfce7' : filter === option && option === 'negative' ? '#fee2e2' : undefined
-                }}
+                className="btn-purple"
+                style={{ width: '100%', padding: '10px 14px', borderRadius: 7 }}
+                onClick={handleRunViaPrompt}
+                disabled={running || !hasSpecificApplication || visibleScenarios.length === 0}
               >
-                {option === 'all' ? 'All' : option === 'positive' ? '✔ Positive' : '✘ Negative'}
+                ✦ Run {visibleScenarios.length} Matching
               </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-hd"><span className="card-title">Select Scenarios</span><span style={{ fontSize: 11, color: 'var(--text-dim)' }}>{selectedScenarioIds.length} of {visibleScenarios.length} selected</span></div>
+          <div className="sc-filter-bar" style={{ marginBottom: 10 }}>
+            {FILTERS.map((f) => (
+              <span key={f.key} className={`sc-fc ${filter === f.key ? 'on' : ''}`} onClick={() => setFilter(f.key)}>{f.label}</span>
             ))}
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 8 }}>
@@ -156,6 +195,11 @@ export default function ExecutionPage() {
                 </label>
               ))}
             </div>
+          )}
+          {visibleScenarios.length > 0 && (
+            <button type="button" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }} onClick={toggleSelectAll}>
+              {allVisibleScenariosSelected ? 'Deselect All' : 'Select All'}
+            </button>
           )}
           <button className="btn btn-primary" onClick={handleRun} disabled={running || !hasSelectedScenarios}>{running ? 'Running…' : '▶ Run Selected'}</button>
         </div>

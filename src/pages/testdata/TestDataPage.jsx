@@ -8,7 +8,11 @@ import { EDIT_ROLES } from '../../constants/roles';
 import { useDialog } from '../../context/DialogContext';
 import { normalizeListResponse } from '../../utils/normalizeListResponse';
 import TestDataForm from './TestDataForm';
-import { parseFieldsJson, previewPairs, fieldCount, effectiveFieldEntries, effectiveGroupKey, headerKeys } from './testDataFields';
+import { parseFieldsJson, previewPairs, fieldCount, effectiveFieldEntries, effectiveGroupKey, headerKeys, safeParseObject } from './testDataFields';
+
+const hasExpectedOutcome = (r) => Boolean(r && (
+  r.serviceName || r.endPoint || r.environment || r.httpStatusCode != null || r.errorCode || r.errorMsg || r.responseFields || r.responseJson
+));
 
 export default function TestDataPage() {
   // Deep-link from Coverage's "+ Create Test Data" button: land on this application
@@ -35,6 +39,15 @@ export default function TestDataPage() {
   const [editStatus, setEditStatus] = useState('VALID');
   const [saving, setSaving] = useState(false);
   const { confirm } = useDialog();
+
+  const [editServiceName, setEditServiceName] = useState('');
+  const [editEndPoint, setEditEndPoint] = useState('');
+  const [editEnvironment, setEditEnvironment] = useState('');
+  const [editHttpStatusCode, setEditHttpStatusCode] = useState('');
+  const [editErrorCode, setEditErrorCode] = useState('');
+  const [editErrorMsg, setEditErrorMsg] = useState('');
+  const [editResponseFieldsText, setEditResponseFieldsText] = useState('');
+  const [editResponseJson, setEditResponseJson] = useState('');
 
   useEffect(() => {
     listApplications({ size: 100 }).then((page) => {
@@ -103,6 +116,14 @@ export default function TestDataPage() {
     setActiveId(record.id);
     setEditStatus(record.status || 'VALID');
     setEditValues(Object.fromEntries(effectiveFieldEntries(parsed)));
+    setEditServiceName(record.serviceName || '');
+    setEditEndPoint(record.endPoint || '');
+    setEditEnvironment(record.environment || '');
+    setEditHttpStatusCode(record.httpStatusCode != null ? String(record.httpStatusCode) : '');
+    setEditErrorCode(record.errorCode || '');
+    setEditErrorMsg(record.errorMsg || '');
+    setEditResponseFieldsText(record.responseFields || '');
+    setEditResponseJson(record.responseJson || '');
     setEditing(true);
   };
 
@@ -139,6 +160,22 @@ export default function TestDataPage() {
   const handleSaveEdit = async () => {
     if (!activeRecord) return;
     setError(null);
+    if (editResponseFieldsText.trim()) {
+      try {
+        JSON.parse(editResponseFieldsText);
+      } catch {
+        setError('Expected Response Fields must be valid JSON');
+        return;
+      }
+    }
+    if (editResponseJson.trim()) {
+      try {
+        JSON.parse(editResponseJson);
+      } catch {
+        setError('Expected Response Body must be valid JSON');
+        return;
+      }
+    }
     setSaving(true);
     try {
       const group = effectiveGroupKey(activeParsed) || 'requestBody';
@@ -149,7 +186,15 @@ export default function TestDataPage() {
         recordName: activeRecord.recordName,
         mode: activeRecord.mode || 'MANUAL',
         status: editStatus,
-        fieldsJson
+        fieldsJson,
+        serviceName: editServiceName.trim() || undefined,
+        endPoint: editEndPoint.trim() || undefined,
+        environment: editEnvironment.trim() || undefined,
+        httpStatusCode: editHttpStatusCode.trim() ? Number(editHttpStatusCode) : undefined,
+        errorCode: editErrorCode.trim() || undefined,
+        errorMsg: editErrorMsg.trim() || undefined,
+        responseFields: editResponseFieldsText.trim() || undefined,
+        responseJson: editResponseJson.trim() || undefined
       });
       setEditing(false);
       load();
@@ -301,6 +346,68 @@ export default function TestDataPage() {
                     ))
                   )}
                 </div>
+
+                {editing ? (
+                  <div style={{ padding: '0 14px 14px' }}>
+                    <div className="td-section-label-dim">Expected Outcome</div>
+                    <div className="td-two-col">
+                      <div className="fld"><label>Service Name</label><input value={editServiceName} onChange={(e) => setEditServiceName(e.target.value)} placeholder="(optional label)" /></div>
+                      <div className="fld"><label>Endpoint</label><input value={editEndPoint} onChange={(e) => setEditEndPoint(e.target.value)} placeholder="(optional label)" /></div>
+                    </div>
+                    <div className="td-two-col">
+                      <div className="fld"><label>Environment</label><input value={editEnvironment} onChange={(e) => setEditEnvironment(e.target.value)} placeholder="e.g. Dev, Staging" /></div>
+                      <div className="fld"><label>Expected HTTP Status Code</label><input type="number" min="100" max="599" value={editHttpStatusCode} onChange={(e) => setEditHttpStatusCode(e.target.value)} placeholder="e.g. 200" /></div>
+                    </div>
+                    <div className="td-two-col">
+                      <div className="fld"><label>Expected Error Code</label><input value={editErrorCode} onChange={(e) => setEditErrorCode(e.target.value)} placeholder="(negative scenarios only)" /></div>
+                      <div className="fld"><label>Expected Error Message</label><input value={editErrorMsg} onChange={(e) => setEditErrorMsg(e.target.value)} placeholder="(negative scenarios only)" /></div>
+                    </div>
+                    <div className="fld">
+                      <label>Expected Response Fields (JSON)</label>
+                      <textarea rows={3} className="td-json-textarea" value={editResponseFieldsText} onChange={(e) => setEditResponseFieldsText(e.target.value)} placeholder='{"status": "ok"}' />
+                    </div>
+                    <div className="fld">
+                      <label>Expected Response Body (JSON)</label>
+                      <textarea rows={3} className="td-json-textarea" value={editResponseJson} onChange={(e) => setEditResponseJson(e.target.value)} placeholder='{"status": "ok"}' />
+                    </div>
+                  </div>
+                ) : hasExpectedOutcome(activeRecord) && (
+                  <div style={{ padding: '0 14px 14px' }}>
+                    <div className="td-section-label-dim">Expected Outcome</div>
+                    <div className="td-field-grid">
+                      {activeRecord.serviceName && (
+                        <div className="td-field-card"><div className="td-field-label">Service Name</div><div className="td-field-value">{activeRecord.serviceName}</div></div>
+                      )}
+                      {activeRecord.endPoint && (
+                        <div className="td-field-card"><div className="td-field-label">Endpoint</div><div className="td-field-value">{activeRecord.endPoint}</div></div>
+                      )}
+                      {activeRecord.environment && (
+                        <div className="td-field-card"><div className="td-field-label">Environment</div><div className="td-field-value">{activeRecord.environment}</div></div>
+                      )}
+                      {activeRecord.httpStatusCode != null && (
+                        <div className="td-field-card"><div className="td-field-label">Expected Status</div><div className="td-field-value">{activeRecord.httpStatusCode}</div></div>
+                      )}
+                      {activeRecord.errorCode && (
+                        <div className="td-field-card"><div className="td-field-label">Expected Error Code</div><div className="td-field-value">{activeRecord.errorCode}</div></div>
+                      )}
+                      {activeRecord.errorMsg && (
+                        <div className="td-field-card"><div className="td-field-label">Expected Error Message</div><div className="td-field-value">{activeRecord.errorMsg}</div></div>
+                      )}
+                      {Object.entries(safeParseObject(activeRecord.responseFields)).map(([key, value]) => (
+                        <div className="td-field-card" key={`rf-${key}`}>
+                          <div className="td-field-label">Expected: {key}</div>
+                          <div className="td-field-value">{String(value)}</div>
+                        </div>
+                      ))}
+                    </div>
+                    {activeRecord.responseJson && (
+                      <div className="fld" style={{ marginTop: 10 }}>
+                        <label>Expected Response Body</label>
+                        <pre className="td-json-textarea" style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{activeRecord.responseJson}</pre>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {editing && (
                   <div className="form-ft" style={{ justifyContent: 'space-between' }}>
