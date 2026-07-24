@@ -151,6 +151,8 @@ a { color: inherit; }
 
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .topbar {
+  position: relative;
+  z-index: 120;
   height: 52px;
   border-bottom: 1px solid var(--border);
   display: flex;

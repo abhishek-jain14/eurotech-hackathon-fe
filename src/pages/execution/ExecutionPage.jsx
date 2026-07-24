@@ -181,7 +181,7 @@ export default function ExecutionPage() {
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 8 }}>
             <input type="checkbox" checked={allVisibleScenariosSelected} onChange={toggleSelectAll} />
-            Select all visible
+            Select All
           </label>
           {!hasSpecificApplication ? (
             <div className="empty-state" style={{ marginBottom: 12 }}>Select a specific application to view and run scenarios.</div>
@@ -195,11 +195,6 @@ export default function ExecutionPage() {
                 </label>
               ))}
             </div>
-          )}
-          {visibleScenarios.length > 0 && (
-            <button type="button" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }} onClick={toggleSelectAll}>
-              {allVisibleScenariosSelected ? 'Deselect All' : 'Select All'}
-            </button>
           )}
           <button className="btn btn-primary" onClick={handleRun} disabled={running || !hasSelectedScenarios}>{running ? 'Running…' : '▶ Run Selected'}</button>
         </div>
