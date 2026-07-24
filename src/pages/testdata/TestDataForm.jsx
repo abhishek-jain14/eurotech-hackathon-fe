@@ -166,14 +166,16 @@ function AiPromptPanel({ applications, endpoints, scenarios }) {
   );
 }
 
-export default function TestDataForm({ applicationId, applications = [], scenarios, endpoints, onSaved, onClose }) {
-  const [mode, setMode] = useState('ai');
+export default function TestDataForm({ applicationId, applications = [], scenarios, endpoints, initialScenarioId, onSaved, onClose }) {
+  // Landing here from Coverage's "+ Create Test Data" button should drop straight into
+  // Single Entry with the missing-data scenario already picked, not the AI tab default.
+  const [mode, setMode] = useState(initialScenarioId ? 'manual' : 'ai');
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const [recordName, setRecordName] = useState('');
   const [status, setStatus] = useState('VALID');
-  const [selectedScenarioId, setSelectedScenarioId] = useState('');
+  const [selectedScenarioId, setSelectedScenarioId] = useState(initialScenarioId ? String(initialScenarioId) : '');
   const [headerValues, setHeaderValues] = useState({});
   const [pathQueryValues, setPathQueryValues] = useState({});
   const [requestBodyText, setRequestBodyText] = useState('');
