@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
 :root {
   --bg: #0b0e14;
   --surface: #12161f;
@@ -14,6 +16,8 @@
   --red: #f2545b;
   --amber: #f5b942;
   --amber-rgb: 245, 185, 66;
+  --font-body: 'Space Grotesk', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  --font-display: 'Rajdhani', 'Trebuchet MS', sans-serif;
 }
 
 :root[data-theme='light'] {
@@ -39,7 +43,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  font-family: var(--font-body);
   font-size: 13px;
   transition: background 0.25s ease, color 0.25s ease;
 }
@@ -116,6 +120,13 @@ a { color: inherit; }
 .sidebar .logo-name { font-size: 16px; font-weight: 700; letter-spacing: 1px; }
 .sidebar .logo-name span { color: var(--accent); }
 .sidebar .logo-sub { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; margin-top: 2px; }
+
+.sidebar .logo-name,
+.topbar-title,
+.card-title,
+.nav-sec {
+  font-family: var(--font-display);
+}
 
 .nav-sec { font-size: 9px; color: var(--text-dim); letter-spacing: 2px; padding: 14px 18px 6px; }
 .nav-item {
