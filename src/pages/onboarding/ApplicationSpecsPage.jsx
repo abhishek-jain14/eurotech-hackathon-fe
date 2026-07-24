@@ -7,6 +7,7 @@ import {
 import RoleGate from '../../components/common/RoleGate';
 import { EDIT_ROLES } from '../../constants/roles';
 import { useDialog } from '../../context/DialogContext';
+import { FIELD_CHANGE_LABEL, FIELD_CHANGE_TAG, buildFieldRows } from '../../utils/specFieldDiff';
 
 const STATUS_TAG = { CURRENT: 'tag-g', PENDING: 'tag-p', REJECTED: 'tag-r' };
 
@@ -37,6 +38,10 @@ export default function ApplicationSpecsPage() {
   const [genType, setGenType] = useState({}); // versionId -> selected scenario type
   const [generating, setGenerating] = useState(null); // versionId in flight
   const { notify } = useDialog();
+  const [expandedEndpoints, setExpandedEndpoints] = useState({}); // endpoint -> bool
+
+  const toggleEndpointDiff = (endpoint) =>
+    setExpandedEndpoints((s) => ({ ...s, [endpoint]: !s[endpoint] }));
 
   const loadVersions = () => listSpecVersions(id).then(setVersions).catch(() => setVersions([]));
 
@@ -205,22 +210,79 @@ export default function ApplicationSpecsPage() {
             Detected via {reviewing.version.source}. Nothing goes live until you approve it below.
           </div>
 
-          {reviewing.impact.changes.length === 0 ? (
-            <div className="empty-state">No structural differences detected against the current version.</div>
-          ) : (
+          {(() => {
+            // A MODIFIED entry with no field-level rows is a false positive (the backend
+            // flagged the endpoint but nothing actually differs field-by-field) - ADDED/REMOVED
+            // endpoints are real changes even without field rows, so only MODIFIED is filtered.
+            const visibleChanges = reviewing.impact.changes
+              .map((c) => ({ c, fieldRows: buildFieldRows((reviewing.impact.fieldChanges || []).find((fc) => fc.endpoint === c.endpoint)) }))
+              .filter(({ c, fieldRows }) => c.changeType !== 'MODIFIED' || fieldRows.length > 0);
+
+            if (visibleChanges.length === 0) {
+              return <div className="empty-state">No structural differences detected against the current version.</div>;
+            }
+
+            return (
             <table>
-              <thead><tr><th>Change</th><th>Endpoint</th><th>Description</th></tr></thead>
+              <thead><tr><th></th><th>Change</th><th>Endpoint</th><th>Description</th></tr></thead>
               <tbody>
-                {reviewing.impact.changes.map((c, i) => (
-                  <tr key={i}>
-                    <td><span className={`tag ${c.changeType === 'ADDED' ? 'tag-g' : c.changeType === 'REMOVED' ? 'tag-r' : 'tag-p'}`}>{c.changeType}</span></td>
-                    <td>{c.endpoint}</td>
-                    <td>{c.description}</td>
-                  </tr>
-                ))}
+                {visibleChanges.map(({ c, fieldRows }, i) => {
+                  const canExpand = c.changeType === 'MODIFIED' && fieldRows.length > 0;
+                  const expanded = !!expandedEndpoints[c.endpoint];
+                  return (
+                    <Fragment key={i}>
+                      <tr>
+                        <td>
+                          {canExpand && (
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => toggleEndpointDiff(c.endpoint)}
+                              aria-expanded={expanded}
+                            >
+                              {expanded ? '▾' : '▸'}
+                            </button>
+                          )}
+                        </td>
+                        <td><span className={`tag ${c.changeType === 'ADDED' ? 'tag-g' : c.changeType === 'REMOVED' ? 'tag-r' : 'tag-p'}`}>{c.changeType}</span></td>
+                        <td>{c.endpoint}</td>
+                        <td>{c.description}</td>
+                      </tr>
+                      {canExpand && expanded && (
+                        <tr>
+                          <td></td>
+                          <td colSpan={3} style={{ padding: 0, background: 'var(--surface-2)' }}>
+                            <table style={{ margin: '4px 12px 10px' }}>
+                              <thead>
+                                <tr>
+                                  <th>Field Change</th>
+                                  <th>Old</th>
+                                  <th>New</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {fieldRows.map((r, ri) => (
+                                  <tr key={ri}>
+                                    <td>
+                                      <span className={`tag ${FIELD_CHANGE_TAG[r.kind] || ''}`}>
+                                        {FIELD_CHANGE_LABEL[r.kind] || r.kind}
+                                      </span>
+                                    </td>
+                                    <td style={{ fontFamily: 'monospace', fontSize: 11, color: r.oldValue ? 'var(--red)' : 'var(--text-dim)', textDecoration: r.oldValue && r.kind !== 'TYPE_CHANGED' ? 'line-through' : 'none' }}>{r.oldValue || '—'}</td>
+                                    <td style={{ fontFamily: 'monospace', fontSize: 11, color: r.newValue ? 'var(--accent)' : 'var(--text-dim)' }}>{r.newValue || '—'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
-          )}
+            );
+          })()}
 
           {reviewing.impact.affectedScenarioCount > 0 && (
             <div className="readonly-banner" style={{ marginTop: 12 }}>
